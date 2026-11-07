@@ -1,0 +1,53 @@
+title: 'Servicio nuevo sospechoso'
+id: e4f67e14-93ed-5fed-af0c-014be3586f6a
+status: experimental
+description: 'Evento 7045 de un servicio de ejecución remota (PsExec y similares) o que ejecuta intérpretes, rutas temporales o descargas.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1543.003
+    - attack.t1569.002
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        Provider_Name: Service Control Manager
+        EventID: 7045
+    selection_remote:
+        ServiceName|startswith:
+            - 'PSEXESVC'
+            - 'PAExec'
+            - 'RemComSvc'
+            - 'csexecsvc'
+    selection_command:
+        ImagePath|contains:
+            - 'powershell'
+            - 'pwsh'
+            - 'cmd.exe /c'
+            - 'cmd /c'
+            - 'mshta'
+            - 'rundll32'
+            - 'regsvr32'
+            - 'certutil'
+            - 'bitsadmin'
+            - '%TEMP%'
+            - '\Temp\'
+            - '\AppData\'
+            - '\Users\Public\'
+            - ' -enc '
+            - 'http://'
+            - 'https://'
+    condition: selection and 1 of selection_*
+fields:
+    - ServiceName
+    - ImagePath
+    - AccountName
+falsepositives:
+    - Herramientas de administración remota legítimas
+level: high
+# winlog-hunter: WLH-006

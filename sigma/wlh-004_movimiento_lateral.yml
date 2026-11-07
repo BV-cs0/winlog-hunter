@@ -1,0 +1,50 @@
+title: Inicio de sesión remoto
+id: c356ff10-b40d-5baa-8926-dc6a9af9be78
+name: winlog_hunter_remote_logon
+status: experimental
+description: Evento 4624 de tipo red (3) o RDP (10) de una cuenta de usuario.
+author: Bryan Valenzuela
+date: 2026-11-07
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4624
+        LogonType:
+            - 3
+            - 10
+    filter_machine:
+        TargetUserName|endswith: '$'
+    filter_anonymous:
+        TargetUserName: 'ANONYMOUS LOGON'
+    filter_local:
+        IpAddress:
+            - '-'
+            - '127.0.0.1'
+            - '::1'
+    condition: selection and not 1 of filter_*
+level: informational
+---
+title: 'Posible movimiento lateral'
+id: 06c301e4-3dd0-5e80-9677-b0fa6d0ab0b1
+status: experimental
+description: 'La misma cuenta inicia sesión por red o RDP en tres o más equipos desde el mismo origen en 30 minutos.'
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.lateral-movement
+    - attack.t1021
+correlation:
+    type: value_count
+    rules:
+        - winlog_hunter_remote_logon
+    group-by:
+        - TargetUserName
+        - IpAddress
+    timespan: 30m
+    condition:
+        field: Computer
+        gte: 3
+level: high
+# winlog-hunter: WLH-004

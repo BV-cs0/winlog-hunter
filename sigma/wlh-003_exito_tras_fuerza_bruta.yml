@@ -1,0 +1,56 @@
+title: Inicio de sesión fallido (secuencia)
+id: b1905d32-5076-5022-9037-6ce953e94b4b
+name: winlog_hunter_failed_logon_seq
+status: experimental
+description: Evento 4625, primer paso de la secuencia.
+author: Bryan Valenzuela
+date: 2026-11-07
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4625
+    filter_machine:
+        TargetUserName|endswith: '$'
+    condition: selection and not filter_machine
+level: informational
+---
+title: Inicio de sesión correcto (secuencia)
+id: 428a28af-e46d-527e-957b-80f4d388bfb8
+name: winlog_hunter_successful_logon_seq
+status: experimental
+description: Evento 4624, segundo paso de la secuencia.
+author: Bryan Valenzuela
+date: 2026-11-07
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4624
+    condition: selection
+level: informational
+---
+title: Inicio de sesión correcto tras fuerza bruta
+id: fc1bec8c-d5a4-5d9e-9a35-b2a231f6b5ce
+status: experimental
+description: Fallos e inicio correcto de la misma cuenta desde el mismo origen en 30 minutos. Aproximación a WLH-003, que además exige 5 fallos previos y que el éxito llegue después (temporal_ordered no lo admiten todos los SIEM).
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.initial-access
+    - attack.t1110
+    - attack.t1078
+correlation:
+    type: temporal
+    rules:
+        - winlog_hunter_failed_logon_seq
+        - winlog_hunter_successful_logon_seq
+    group-by:
+        - TargetUserName
+        - IpAddress
+    timespan: 30m
+level: critical
+# winlog-hunter: WLH-003

@@ -1,0 +1,25 @@
+title: 'Cuenta de usuario creada'
+id: 48f33da4-3791-555b-979a-a44798716215
+status: experimental
+description: 'Evento 4720: se creó una cuenta nueva.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.persistence
+    - attack.t1136
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4720
+    condition: selection
+fields:
+    - TargetUserName
+    - SubjectUserName
+falsepositives:
+    - Altas de usuarios planificadas
+level: medium
+# winlog-hunter: WLH-008

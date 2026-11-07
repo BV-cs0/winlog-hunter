@@ -1,0 +1,33 @@
+title: 'Persistencia con WMI'
+id: 637f63c7-7830-5317-ad68-33b72a3197a3
+status: experimental
+description: 'Sysmon 19/20/21: creación o modificación de filtros, consumidores o enlaces de eventos WMI.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1546.003
+logsource:
+    product: windows
+    category: wmi_event
+detection:
+    selection:
+        EventID:
+            - 19
+            - 20
+            - 21
+    filter_deleted:
+        Operation: 'Deleted'
+    condition: selection and not filter_deleted
+fields:
+    - User
+    - Name
+    - Query
+    - Destination
+falsepositives:
+    - Agentes de monitorización que usan suscripciones WMI
+level: high
+# winlog-hunter: WLH-020

@@ -77,7 +77,7 @@ class CommandLine(unittest.TestCase):
     def test_rules_listing(self):
         code, out, _ = run_cli("rules")
         self.assertEqual(code, 0)
-        self.assertEqual(out.count("WLH-"), 12)
+        self.assertEqual(out.count("WLH-"), 21)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,51 @@
+title: 'PowerShell sospechoso'
+id: 152de575-6695-5888-8913-deafd505e02a
+status: experimental
+description: 'PowerShell con comando codificado, descarga y ejecución en memoria (IEX) o evasión de AMSI.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.execution
+    - attack.t1059.001
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_image:
+        - Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+        - OriginalFileName:
+            - 'PowerShell.EXE'
+            - 'pwsh.dll'
+    selection_encoded:
+        CommandLine|contains|windash:
+            - ' -enc '
+            - ' -enco'
+            - ' -ec '
+    selection_download_iex:
+        CommandLine|contains:
+            - 'DownloadString'
+            - 'DownloadFile'
+            - 'Net.WebClient'
+            - 'Invoke-WebRequest'
+            - 'iwr '
+    selection_iex:
+        CommandLine|contains:
+            - 'IEX'
+            - 'Invoke-Expression'
+    selection_amsi:
+        CommandLine|contains:
+            - 'AmsiUtils'
+            - 'amsiInitFailed'
+    condition: selection_image and (selection_encoded or selection_amsi or (selection_download_iex and selection_iex))
+fields:
+    - CommandLine
+    - ParentImage
+    - User
+falsepositives:
+    - Scripts de administración que usan -EncodedCommand
+level: high
+# winlog-hunter: WLH-010

@@ -1,0 +1,31 @@
+title: 'DCSync'
+id: 7a22a64b-34ae-5c17-939a-5ef2cb2a30b6
+status: experimental
+description: 'Evento 4662 con derechos de replicación de directorio pedidos por una cuenta que no es de equipo.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.t1003.006
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4662
+        Properties|contains:
+            - '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'
+            - '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'
+            - '89e95b76-444d-4c62-991a-0facbeda640c'
+    filter_machine:
+        SubjectUserName|endswith: '$'
+    condition: selection and not filter_machine
+fields:
+    - SubjectUserName
+    - SubjectDomainName
+falsepositives:
+    - Azure AD Connect y otras cuentas de sincronización
+level: critical
+# winlog-hunter: WLH-015

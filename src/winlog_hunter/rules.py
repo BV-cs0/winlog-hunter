@@ -365,7 +365,7 @@ def lateral_movement(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "WLH-005",
     "Registro de eventos borrado",
     "critical",
-    ["T1070.001"],
+    ["T1685.005"],
     "Se vació el registro de seguridad (1102) u otro registro (104): típico para borrar huellas.",
 )
 def log_cleared(events: list[Event], cfg: Config) -> Iterator[Hit]:
@@ -448,7 +448,7 @@ def scheduled_task(events: list[Event], cfg: Config) -> Iterator[Hit]:
             {
                 "tarea": e.get("TaskName"),
                 "usuario": e.get("SubjectUserName"),
-                "accion": _truncate(action),
+                "acción": _truncate(action),
                 "indicadores": [f"comando sospechoso: '{match.group(0).strip()}'"] if match else [],
             },
             severity="high" if match else "low",
@@ -624,7 +624,7 @@ def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
             {
                 "usuario": p.user,
                 "proceso_padre": p.parent,
-                "linea_de_comandos": _truncate(p.command_line),
+                "línea_de_comandos": _truncate(p.command_line),
                 "comando_decodificado": _truncate(decoded),
                 "indicadores": indicators,
             },
@@ -665,10 +665,10 @@ def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     f"{name} usado para {technique} en {p.event.computer or UNKNOWN}",
                     {
                         "binario": name,
-                        "tecnica": technique,
+                        "técnica": technique,
                         "usuario": p.user,
                         "proceso_padre": p.parent,
-                        "linea_de_comandos": _truncate(p.command_line),
+                        "línea_de_comandos": _truncate(p.command_line),
                     },
                     mitre=mitre,
                 )
@@ -700,6 +700,412 @@ def office_child_process(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     "proceso_padre": p.parent,
                     "proceso_hijo": p.image,
                     "usuario": p.user,
-                    "linea_de_comandos": _truncate(p.command_line),
+                    "línea_de_comandos": _truncate(p.command_line),
                 },
             )
+
+
+# --------------------------------------------------------------------------- #
+# Acceso a credenciales
+# --------------------------------------------------------------------------- #
+
+_PROCESS_VM_READ = 0x0010
+_LSASS_ALLOWED = {
+    "msmpeng.exe", "mssense.exe", "csrss.exe", "wininit.exe", "svchost.exe", "lsm.exe", "services.exe",
+    "wmiprvse.exe", "taskmgr.exe", "procexp64.exe", "procexp.exe", "vmtoolsd.exe", "searchindexer.exe",
+}
+_DUMP_TOOLS = re.compile(
+    r"mimikatz|procdump|dumpert|outflank|nanodump|pypykatz|sqldumper|rdrleakdiag|comsvcs|dbghelp|dbgcore",
+    re.IGNORECASE,
+)
+
+
+def _is_sysmon(e: Event) -> bool:
+    return "sysmon" in (e.channel + e.provider).lower()
+
+
+@rule(
+    "WLH-013",
+    "Acceso a la memoria de LSASS",
+    "critical",
+    ["T1003.001"],
+    "Sysmon 10: un proceso abre lsass.exe con permiso de lectura de memoria. Así roban contraseñas Mimikatz, procdump o comsvcs.",
+)
+def lsass_access(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.event_id != 10 or not _is_sysmon(e) or _exe(e.get("TargetImage")) != "lsass.exe":
+            continue
+        source, mask, trace = e.get("SourceImage"), e.get("GrantedAccess").lower(), e.get("CallTrace")
+        try:
+            can_read = bool(int(mask, 16) & _PROCESS_VM_READ)
+        except ValueError:
+            can_read = False
+        tool = _DUMP_TOOLS.search(f"{source} {trace}")
+        trusted = _exe(source) in _LSASS_ALLOWED and source.lower().startswith(("c:\\windows\\", "c:\\program"))
+        if not can_read or (trusted and not tool):
+            continue
+        indicators = []
+        if tool:
+            indicators.append(f"herramienta de volcado: '{tool.group(0)}'")
+        if "unknown(" in trace.lower():
+            indicators.append("código sin módulo en la pila (inyectado o reflectivo)")
+        yield Hit(
+            [e],
+            f"{_exe(source) or UNKNOWN} accedió a la memoria de lsass.exe en {e.computer or UNKNOWN}",
+            {
+                "proceso_origen": source,
+                "permisos": mask,
+                "usuario": e.get("SourceUser"),
+                "indicadores": indicators,
+            },
+            severity="critical" if indicators else "high",
+        )
+
+
+_DUMP_COMMANDS = [
+    ("comsvcs.dll MiniDump", re.compile(r"comsvcs(?:\.dll)?[\s,]+#?(?:minidump|24)\b", re.IGNORECASE), "T1003.001"),
+    ("procdump contra LSASS", re.compile(r"procdump.*\blsass", re.IGNORECASE), "T1003.001"),
+    ("copia de la base de AD (ntdsutil)", re.compile(r"ntdsutil.*\bifm\b", re.IGNORECASE), "T1003.003"),
+    ("copia de ntds.dit", re.compile(r"\\ntds\.dit\b", re.IGNORECASE), "T1003.003"),
+    ("copia del registro SAM/SECURITY",
+     re.compile(r"\breg(?:\.exe)?\s+save\s+hklm\\(?:sam|security|system)\b", re.IGNORECASE), "T1003.002"),
+    ("Mimikatz", re.compile(r"sekurlsa::|lsadump::|kerberos::golden|privilege::debug", re.IGNORECASE), "T1003"),
+]
+
+
+@rule(
+    "WLH-014",
+    "Comando de volcado de credenciales",
+    "critical",
+    ["T1003"],
+    "Sysmon 1/4688: comsvcs MiniDump, procdump contra LSASS, ntdsutil IFM, reg save de SAM o comandos de Mimikatz.",
+)
+def credential_dump_command(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        for name, pattern, mitre in _DUMP_COMMANDS:
+            if pattern.search(p.command_line):
+                yield Hit(
+                    [p.event],
+                    f"{name} en {p.event.computer or UNKNOWN}",
+                    {
+                        "técnica": name,
+                        "usuario": p.user,
+                        "proceso": p.image,
+                        "proceso_padre": p.parent,
+                        "línea_de_comandos": _truncate(p.command_line),
+                    },
+                    mitre=[mitre],
+                )
+                break
+
+
+# GUIDs de los derechos de replicación de directorio (DS-Replication-Get-Changes*).
+_REPLICATION_GUIDS = {
+    "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2": "DS-Replication-Get-Changes",
+    "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2": "DS-Replication-Get-Changes-All",
+    "89e95b76-444d-4c62-991a-0facbeda640c": "DS-Replication-Get-Changes-In-Filtered-Set",
+}
+
+
+@rule(
+    "WLH-015",
+    "DCSync",
+    "critical",
+    ["T1003.006"],
+    "Evento 4662 con derechos de replicación de AD pedidos por una cuenta que no es un controlador de dominio.",
+)
+def dcsync(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[tuple[str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if e.event_id != 4662:
+            continue
+        props = e.get("Properties").lower()
+        user = e.get("SubjectUserName")
+        if not user or _is_system_account(user) or not any(g in props for g in _REPLICATION_GUIDS):
+            continue
+        groups[(user.lower(), e.computer.lower())].append(e)
+    for evs in groups.values():
+        for burst in _bursts(evs, cfg.window, 1):
+            props = " ".join(x.get("Properties").lower() for x in burst)
+            yield Hit(
+                burst,
+                f"'{burst[0].get('SubjectUserName')}' pidió replicar el directorio en {burst[0].computer or UNKNOWN}",
+                {
+                    "usuario": burst[0].get("SubjectUserName"),
+                    "dominio": burst[0].get("SubjectDomainName"),
+                    "derechos": sorted(n for g, n in _REPLICATION_GUIDS.items() if g in props),
+                },
+            )
+
+
+@rule(
+    "WLH-016",
+    "Kerberoasting",
+    "high",
+    ["T1558.003"],
+    "Eventos 4769 pidiendo tickets de servicio con cifrado RC4 (0x17) para cuentas de usuario: típico de Rubeus o GetUserSPNs.",
+)
+def kerberoasting(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[str, list[Event]] = defaultdict(list)
+    for e in events:
+        if e.event_id != 4769 or e.get("TicketEncryptionType").lower() != "0x17":
+            continue
+        if e.get("Status").lower() not in ("", "0x0"):
+            continue
+        service, user = e.get("ServiceName"), e.get("TargetUserName").split("@", 1)[0]
+        if not service or service.endswith("$") or service.lower().startswith("krbtgt") or user.endswith("$"):
+            continue
+        groups[user.lower()].append(e)
+    for evs in groups.values():
+        for burst in _bursts(evs, cfg.window, 1):
+            services = sorted({e.get("ServiceName") for e in burst}, key=str.lower)
+            user = burst[0].get("TargetUserName").split("@", 1)[0]
+            yield Hit(
+                burst,
+                f"'{user}' pidió {len(burst)} ticket(s) RC4 para {len(services)} servicio(s)",
+                {
+                    "usuario": user,
+                    "origen": burst[0].get("IpAddress").replace("::ffff:", ""),
+                    "servicios": services[:25],
+                    "cifrado": "RC4 (0x17)",
+                },
+                severity="high" if len(services) >= 2 else "medium",
+            )
+
+
+# --------------------------------------------------------------------------- #
+# Movimiento lateral y ejecución remota
+# --------------------------------------------------------------------------- #
+
+_REMOTE_PIPES = {
+    "svcctl": ("el gestor de servicios remoto (PsExec, sc \\\\equipo)", ["T1569.002", "T1021.002"]),
+    "atsvc": ("el programador de tareas remoto", ["T1053.002", "T1021.002"]),
+    "psexesvc": ("el canal de PsExec", ["T1569.002", "T1021.002"]),
+    "remcom_communicaton": ("el canal de RemCom", ["T1569.002", "T1021.002"]),
+    "paexec": ("el canal de PAExec", ["T1569.002", "T1021.002"]),
+}
+
+
+@rule(
+    "WLH-017",
+    "Ejecución remota por SMB",
+    "high",
+    ["T1021.002"],
+    "Evento 5145: acceso remoto a los canales de servicios, tareas o PsExec, o un ejecutable copiado a ADMIN$/C$.",
+)
+def smb_remote_exec(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[tuple[str, str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if e.event_id != 5145:
+            continue
+        share, target = e.get("ShareName").lower(), e.get("RelativeTargetName").lower()
+        ip = e.get("IpAddress")
+        if ip in _LOCAL_IPS:
+            continue
+        what = ""
+        if share.endswith("ipc$"):
+            what = next((pipe for pipe in _REMOTE_PIPES if target.startswith(pipe)), "")
+        elif share.endswith(("admin$", "c$")) and target.endswith((".exe", ".dll", ".bat", ".ps1", ".vbs")):
+            what = "binario"
+        if what:
+            groups[(ip, e.computer.lower(), what)].append(e)
+    for (ip, _, what), evs in groups.items():
+        for burst in _bursts(evs, cfg.window, 1):
+            if what == "binario":
+                label, mitre = "un ejecutable copiado a un recurso administrativo", ["T1021.002", "T1570"]
+                files = sorted({x.get("RelativeTargetName") for x in burst})[:10]
+            else:
+                (label, mitre), files = _REMOTE_PIPES[what], []
+            yield Hit(
+                burst,
+                f"{ip} usó {label} en {burst[0].computer or UNKNOWN}",
+                {
+                    "origen": ip,
+                    "usuario": burst[0].get("SubjectUserName"),
+                    "recurso": burst[0].get("ShareName"),
+                    "canal": "" if files else burst[0].get("RelativeTargetName"),
+                    "ficheros": files,
+                },
+                mitre=mitre,
+            )
+
+
+_REMOTE_SHELL_PARENTS = {
+    "wmiprvse.exe": ("WMI", ["T1047"]),
+    "wsmprovhost.exe": ("PowerShell Remoting", ["T1021.006"]),
+    "winrshost.exe": ("WinRM (winrs)", ["T1021.006"]),
+}
+_REMOTE_SHELL_CHILDREN = {"cmd.exe", "powershell.exe", "pwsh.exe", "rundll32.exe", "mshta.exe", "wscript.exe", "cscript.exe"}
+
+
+@rule(
+    "WLH-018",
+    "Shell lanzada por un servicio remoto",
+    "high",
+    ["T1047", "T1021.006"],
+    "WMI o WinRM abren cmd o PowerShell: así ejecutan comandos wmiexec, Invoke-Command o winrs.",
+)
+def remote_service_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        parent, child = _exe(p.parent), _exe(p.image)
+        if parent not in _REMOTE_SHELL_PARENTS or child not in _REMOTE_SHELL_CHILDREN:
+            continue
+        via, mitre = _REMOTE_SHELL_PARENTS[parent]
+        yield Hit(
+            [p.event],
+            f"{child} lanzado vía {via} en {p.event.computer or UNKNOWN}",
+            {
+                "vía": via,
+                "proceso_padre": p.parent,
+                "proceso_hijo": p.image,
+                "usuario": p.user,
+                "línea_de_comandos": _truncate(p.command_line),
+            },
+            mitre=mitre,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Persistencia (Sysmon 12/13 y 19/20/21)
+# --------------------------------------------------------------------------- #
+
+_PERSISTENCE_KEYS = [
+    (re.compile(r"\\currentversion\\(?:run|runonce|runonceex|runservices)\\", re.I), "la clave Run", ["T1547.001"]),
+    (re.compile(r"\\policies\\explorer\\run\\", re.I), "la clave Run de directivas", ["T1547.001"]),
+    (re.compile(r"\\winlogon\\(?:shell|userinit)$", re.I), "Winlogon (Shell/Userinit)", ["T1547.004"]),
+    (re.compile(r"\\image file execution options\\[^\\]+\\(?:debugger|globalflag)$", re.I),
+     "Image File Execution Options", ["T1546.012"]),
+    (re.compile(r"\\silentprocessexit\\[^\\]+\\monitorprocess$", re.I), "SilentProcessExit", ["T1546.012"]),
+    (re.compile(r"\\windows\\appinit_dlls$", re.I), "AppInit_DLLs", ["T1546.010"]),
+    (re.compile(r"\\(?:user )?shell folders\\(?:common )?startup$", re.I), "la carpeta de Inicio", ["T1547.001"]),
+    (re.compile(r"\\session manager\\(?:bootexecute|setupexecute)$", re.I), "BootExecute", ["T1547.001"]),
+    (re.compile(r"^hku\\[^\\]+(?:\\software\\classes|_classes)\\clsid\\[^\\]+\\(?:inprocserver32|localserver32|treatas)\\",
+                re.I), "un objeto COM del usuario", ["T1546.015"]),
+    (re.compile(r"\\sam\\sam\\domains\\account\\users\\names\\[^\\]+\$(?:\\|$)", re.I),
+     "una cuenta local oculta (nombre acabado en $)", ["T1564.002"]),
+    (re.compile(r"\\sam\\sam\\domains\\account\\users\\[0-9a-f]{8}\\f$", re.I),
+     "el RID de una cuenta (RID hijacking)", ["T1098"]),
+    (re.compile(r"\\lsa\\(?:security packages|authentication packages|notification packages)$", re.I),
+     "los paquetes de seguridad de LSA", ["T1547.005"]),
+    (re.compile(r"\\microsoft\\netsh\\", re.I), "las DLL auxiliares de netsh", ["T1546.007"]),
+]
+_INSTALLERS = re.compile(
+    r"^c:\\(?:windows\\(?:system32|syswow64)\\(?:msiexec|services|trustedinstaller)\.exe|"
+    r"windows\\servicing\\|windows\\winsxs\\.*tiworker\.exe|"
+    r"program files(?: \(x86\))?\\(?:windows defender|microsoft onedrive|google\\update))",
+    re.IGNORECASE,
+)
+
+
+@rule(
+    "WLH-019",
+    "Persistencia en el registro",
+    "high",
+    ["T1547.001"],
+    "Sysmon 13: se escribe en claves de arranque (Run, Winlogon, IFEO, AppInit, LSA, COM...) desde un proceso que no es un instalador.",
+)
+def registry_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.event_id not in (12, 13, 14) or not _is_sysmon(e):
+            continue
+        key, image = e.get("TargetObject", "NewName"), e.get("Image")
+        if not key or _INSTALLERS.match(image):
+            continue
+        for pattern, label, mitre in _PERSISTENCE_KEYS:
+            if not pattern.search(key):
+                continue
+            if "RID" in label and _exe(image) == "lsass.exe":
+                break  # LSASS actualiza ese valor en cada inicio de sesión
+            details = e.get("Details")
+            suspicious = _SUSPICIOUS_COMMAND.search(details) or _SUSPICIOUS_COMMAND.search(image)
+            yield Hit(
+                [e],
+                f"{_exe(image) or UNKNOWN} modificó {label} en {e.computer or UNKNOWN}",
+                {
+                    "clave": key,
+                    "valor": _truncate(details),
+                    "proceso": image,
+                    "usuario": e.get("User"),
+                },
+                mitre=mitre,
+                severity="medium" if "Run" in label and not suspicious else None,
+            )
+            break
+
+
+@rule(
+    "WLH-020",
+    "Persistencia con WMI",
+    "high",
+    ["T1546.003"],
+    "Sysmon 19/20/21: se crea un filtro, consumidor o enlace de eventos WMI que ejecuta algo de forma permanente.",
+)
+def wmi_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[str, list[Event]] = defaultdict(list)
+    for e in events:
+        if e.event_id in (19, 20, 21) and _is_sysmon(e) and e.get("Operation").lower() in ("", "created", "modified"):
+            groups[e.computer.lower()].append(e)
+    for evs in groups.values():
+        for burst in _bursts(evs, cfg.window, 1):
+            consumer = next((x for x in burst if x.event_id == 20), None)
+            filt = next((x for x in burst if x.event_id == 19), None)
+            name = (consumer or filt or burst[0]).get("Name", "Consumer").strip('"')
+            yield Hit(
+                burst,
+                f"Suscripción WMI '{name or UNKNOWN}' creada en {burst[0].computer or UNKNOWN}",
+                {
+                    "nombre": name,
+                    "usuario": burst[0].get("User"),
+                    "consulta": _truncate(filt.get("Query").strip('"')) if filt else "",
+                    "acción": _truncate(consumer.get("Destination").strip('"')) if consumer else "",
+                    "tipo": consumer.get("Type") if consumer else "",
+                },
+            )
+
+
+# --------------------------------------------------------------------------- #
+# PowerShell Script Block Logging (4104)
+# --------------------------------------------------------------------------- #
+
+_SCRIPT_BLOCK_INDICATORS = [
+    ("volcado de LSASS", re.compile(r"minidumpwritedump|out-minidump", re.I), "T1003.001"),
+    ("Mimikatz", re.compile(r"invoke-mimikatz|sekurlsa::|lsadump::", re.I), "T1003"),
+    ("evasión de AMSI", re.compile(r"amsiutils|amsiinitfailed|amsiscanbuffer", re.I), "T1685"),
+    ("ventana falsa de credenciales", re.compile(r"promptforcredential", re.I), "T1056.002"),
+    ("Kerberoasting", re.compile(r"invoke-kerberoast|kerberosrequestorsecuritytoken", re.I), "T1558.003"),
+    ("código comprimido cargado en memoria", re.compile(
+        r"(?:gzipstream|deflatestream)[\s\S]{0,300}frombase64string|frombase64string[\s\S]{0,300}(?:gzipstream|deflatestream)",
+        re.I), "T1027"),
+    ("inyección de código", re.compile(r"virtualalloc[\s\S]{0,500}createthread|createremotethread|writeprocessmemory", re.I),
+     "T1055"),
+    ("PowerSploit / Empire", re.compile(r"invoke-shellcode|invoke-reflectivepeinjection|invoke-empire", re.I), "T1059.001"),
+]
+
+
+@rule(
+    "WLH-021",
+    "Script de PowerShell malicioso",
+    "high",
+    ["T1059.001"],
+    "Evento 4104 (Script Block Logging): el código ejecutado contiene volcado de LSASS, Mimikatz, evasión de AMSI, inyección...",
+)
+def malicious_script_block(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    seen: set[str] = set()
+    for e in events:
+        text = e.get("ScriptBlockText") if e.event_id == 4104 else ""
+        found = [(name, mitre) for name, regex, mitre in _SCRIPT_BLOCK_INDICATORS if text and regex.search(text)]
+        block = e.get("ScriptBlockId") or text[:200]
+        if not found or block in seen:
+            continue
+        seen.add(block)
+        yield Hit(
+            [e],
+            f"Script de PowerShell con {', '.join(n for n, _ in found)} en {e.computer or UNKNOWN}",
+            {
+                "indicadores": [n for n, _ in found],
+                "ruta": e.get("Path"),
+                "fragmento": _truncate(text, 400),
+            },
+            mitre=sorted({"T1059.001", *(m for _, m in found)}),
+            severity="critical" if any(m.startswith("T1003") for _, m in found) else None,
+        )

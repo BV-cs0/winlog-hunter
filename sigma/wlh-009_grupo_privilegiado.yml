@@ -1,0 +1,44 @@
+title: 'Miembro añadido a grupo privilegiado'
+id: 7ad3735e-5df3-5eb2-9f53-835aea00417b
+status: experimental
+description: 'Eventos 4728/4732/4756 sobre grupos privilegiados, identificados por SID (independiente del idioma).'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1098
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID:
+            - 4728
+            - 4732
+            - 4756
+    selection_builtin:
+        TargetSid:
+            - 'S-1-5-32-544'
+            - 'S-1-5-32-548'
+            - 'S-1-5-32-549'
+            - 'S-1-5-32-551'
+            - 'S-1-5-32-555'
+    selection_domain:
+        TargetSid|endswith:
+            - '-512'
+            - '-518'
+            - '-519'
+            - '-520'
+    condition: selection and 1 of selection_*
+fields:
+    - TargetUserName
+    - MemberName
+    - MemberSid
+    - SubjectUserName
+falsepositives:
+    - Cambios de permisos planificados
+level: high
+# winlog-hunter: WLH-009

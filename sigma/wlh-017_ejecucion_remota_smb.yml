@@ -1,0 +1,51 @@
+title: 'Ejecución remota por SMB'
+id: e41b6f03-3931-5e87-8e9d-680cc623f1b1
+status: experimental
+description: 'Evento 5145: acceso remoto a los canales de servicios, tareas o PsExec, o un ejecutable copiado a ADMIN$/C$.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.lateral-movement
+    - attack.execution
+    - attack.t1021.002
+    - attack.t1569.002
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 5145
+    selection_pipe:
+        ShareName|endswith: '\IPC$'
+        RelativeTargetName|startswith:
+            - 'svcctl'
+            - 'atsvc'
+            - 'PSEXESVC'
+            - 'RemCom_communicaton'
+            - 'PAExec'
+    selection_copy:
+        ShareName|endswith:
+            - '\ADMIN$'
+            - '\C$'
+        RelativeTargetName|endswith:
+            - '.exe'
+            - '.dll'
+            - '.bat'
+            - '.ps1'
+            - '.vbs'
+    filter_local:
+        IpAddress:
+            - '127.0.0.1'
+            - '::1'
+    condition: selection and 1 of selection_* and not filter_local
+fields:
+    - IpAddress
+    - SubjectUserName
+    - ShareName
+    - RelativeTargetName
+falsepositives:
+    - Herramientas de despliegue de software
+level: high
+# winlog-hunter: WLH-017

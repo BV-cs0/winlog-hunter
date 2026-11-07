@@ -1,0 +1,46 @@
+title: 'Script de PowerShell malicioso'
+id: ed4215cf-3066-5558-af07-4e8030394779
+status: experimental
+description: 'Evento 4104 (Script Block Logging) con volcado de LSASS, Mimikatz, evasión de AMSI, Kerberoasting o inyección de código.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.execution
+    - attack.credential-access
+    - attack.t1059.001
+    - attack.t1003.001
+    - attack.t1685
+    - attack.t1558.003
+    - attack.t1055
+logsource:
+    product: windows
+    category: ps_script
+    definition: 'Requiere Script Block Logging activado'
+detection:
+    selection:
+        ScriptBlockText|contains:
+            - 'MiniDumpWriteDump'
+            - 'Out-Minidump'
+            - 'Invoke-Mimikatz'
+            - 'sekurlsa::'
+            - 'lsadump::'
+            - 'AmsiUtils'
+            - 'amsiInitFailed'
+            - 'AmsiScanBuffer'
+            - 'PromptForCredential'
+            - 'Invoke-Kerberoast'
+            - 'KerberosRequestorSecurityToken'
+            - 'CreateRemoteThread'
+            - 'WriteProcessMemory'
+            - 'Invoke-Shellcode'
+            - 'Invoke-ReflectivePEInjection'
+    condition: selection
+fields:
+    - ScriptBlockText
+    - Path
+falsepositives:
+    - Herramientas de seguridad y pentesting autorizadas
+level: high
+# winlog-hunter: WLH-021

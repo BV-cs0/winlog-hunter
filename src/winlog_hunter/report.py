@@ -229,7 +229,10 @@ footer{color:var(--muted);font-size:13px;margin-top:28px}
 </html>
 """
 
-_CODE_KEYS = {"linea_de_comandos", "comando_decodificado", "ruta", "accion", "proceso_padre", "proceso_hijo"}
+_CODE_KEYS = {
+    "línea_de_comandos", "comando_decodificado", "ruta", "acción", "proceso_padre", "proceso_hijo",
+    "proceso", "proceso_origen", "clave", "valor", "consulta", "fragmento",
+}
 
 
 def render_html(findings: list[Finding], stats: Stats) -> str:

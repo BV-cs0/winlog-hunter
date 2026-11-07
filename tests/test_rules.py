@@ -90,7 +90,7 @@ class PersistenceRules(unittest.TestCase):
         content = "&lt;Task&gt;&lt;Exec&gt;&lt;Command&gt;powershell.exe&lt;/Command&gt;&lt;Arguments&gt;-w hidden&lt;/Arguments&gt;"
         finding = run_rules([ev(4698, TaskName="\\x", TaskContent=content)])[0]
         self.assertEqual(finding.severity, "high")
-        self.assertEqual(finding.evidence["accion"], "powershell.exe -w hidden")
+        self.assertEqual(finding.evidence["acción"], "powershell.exe -w hidden")
 
     def test_privileged_group_by_sid_any_language(self):
         local_admins = ev(4732, TargetUserName="Administratoren", TargetSid="S-1-5-32-544", MemberSid="S-1-5-21-1-2-3-1001")
@@ -134,6 +134,112 @@ class ExecutionRules(unittest.TestCase):
         security_event = ev(4688, 1, NewProcessName=r"C:\Windows\System32\wscript.exe",
                             ParentProcessName=r"C:\Program Files\Office\EXCEL.EXE", CommandLine="wscript a.js")
         self.assertEqual(ids([sysmon_event, security_event]), ["WLH-012", "WLH-012"])
+
+
+SYSMON = "Microsoft-Windows-Sysmon/Operational"
+LSASS = r"C:\Windows\system32\lsass.exe"
+
+
+def lsass_access(source, mask="0x1010", trace=r"C:\Windows\SYSTEM32\ntdll.dll+9d1e4"):
+    return ev(10, 0, "WS01", SYSMON, SourceImage=source, TargetImage=LSASS, GrantedAccess=mask, CallTrace=trace)
+
+
+class CredentialAccessRules(unittest.TestCase):
+    def test_lsass_memory_read_by_unknown_process(self):
+        findings = run_rules([lsass_access(r"C:\Users\Public\m.exe")])
+        self.assertEqual([(f.rule_id, f.severity) for f in findings], [("WLH-013", "high")])
+
+    def test_lsass_dump_tool_is_critical(self):
+        trace = r"C:\Windows\SYSTEM32\ntdll.dll+9d1e4|C:\Windows\System32\dbgcore.DLL+6c4e"
+        finding = run_rules([lsass_access(r"C:\Windows\System32\rundll32.exe", "0x1fffff", trace)])[0]
+        self.assertEqual(finding.severity, "critical")
+
+    def test_lsass_benign_access_is_ignored(self):
+        self.assertEqual(ids([lsass_access(r"C:\Windows\System32\svchost.exe")]), [])
+        self.assertEqual(ids([lsass_access(r"C:\Users\Public\m.exe", mask="0x1000")]), [])  # sin VM_READ
+
+    def test_credential_dump_commands(self):
+        events = [
+            sysmon(0, r"C:\Windows\System32\rundll32.exe",
+                   r"rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 624 C:\temp\l.dmp full"),
+            sysmon(1, r"C:\Windows\System32\reg.exe", r"reg save HKLM\SAM C:\temp\sam"),
+            sysmon(2, r"C:\Windows\System32\ntdsutil.exe", 'ntdsutil "ac i ntds" "ifm" "create full c:\\x" q q'),
+        ]
+        dumps = [f.mitre for f in run_rules(events) if f.rule_id == "WLH-014"]
+        self.assertEqual(dumps, [["T1003.001"], ["T1003.002"], ["T1003.003"]])
+
+    def test_dcsync_by_user_not_by_domain_controller(self):
+        props = "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}"
+        user = ev(4662, 0, "DC01", SubjectUserName="bob", Properties=props)
+        dc = ev(4662, 1, "DC01", SubjectUserName="DC02$", Properties=props)
+        findings = run_rules([user, dc])
+        self.assertEqual([(f.rule_id, f.severity) for f in findings], [("WLH-015", "critical")])
+        self.assertEqual(findings[0].evidence["derechos"], ["DS-Replication-Get-Changes-All"])
+
+    def test_kerberoasting_rc4_for_user_services(self):
+        def tgs(sec, service, enc="0x17"):
+            return ev(4769, sec, "DC01", TargetUserName="bob@CORP.LOCAL", ServiceName=service,
+                      TicketEncryptionType=enc, Status="0x0", IpAddress="::ffff:10.0.0.5")
+        events = [tgs(0, "svc_sql"), tgs(1, "svc_web"), tgs(2, "WS01$"), tgs(3, "svc_aes", "0x12")]
+        findings = run_rules(events)
+        self.assertEqual([(f.rule_id, f.severity) for f in findings], [("WLH-016", "high")])
+        self.assertEqual(findings[0].evidence["servicios"], ["svc_sql", "svc_web"])
+        self.assertEqual(findings[0].evidence["origen"], "10.0.0.5")
+
+
+class LateralMovementAndPersistenceRules(unittest.TestCase):
+    def test_smb_service_pipe_and_admin_share_copy(self):
+        pipe = ev(5145, 0, "SRV01", ShareName=r"\\*\IPC$", RelativeTargetName="svcctl", IpAddress="10.0.0.9")
+        copy = ev(5145, 1, "SRV01", ShareName=r"\\*\ADMIN$", RelativeTargetName="PSEXESVC.exe", IpAddress="10.0.0.9")
+        harmless = ev(5145, 2, "SRV01", ShareName=r"\\*\IPC$", RelativeTargetName="srvsvc", IpAddress="10.0.0.9")
+        findings = run_rules([pipe, copy, harmless])
+        self.assertEqual(sorted(f.mitre[0] for f in findings), ["T1021.002", "T1569.002"])
+
+    def test_shell_from_wmi_and_winrm(self):
+        events = [
+            sysmon(0, r"C:\Windows\System32\cmd.exe", "cmd.exe /Q /c whoami 1> \\\\127.0.0.1\\ADMIN$\\__1",
+                   parent=r"C:\Windows\System32\wbem\WmiPrvSE.exe"),
+            sysmon(1, PS, "powershell", parent=r"C:\Windows\System32\wsmprovhost.exe"),
+        ]
+        self.assertEqual([f.mitre for f in run_rules(events) if f.rule_id == "WLH-018"], [["T1047"], ["T1021.006"]])
+
+    def test_registry_run_key(self):
+        def reg(sec, image, key, value):
+            return ev(13, sec, "WS01", SYSMON, EventType="SetValue", Image=image, TargetObject=key, Details=value)
+        run = r"HKU\S-1-5-21-1\Software\Microsoft\Windows\CurrentVersion\Run\upd"
+        events = [
+            reg(0, r"C:\Users\x\AppData\Roaming\a.exe", run, r"powershell -w hidden -enc AAAA"),
+            reg(1, r"C:\Program Files\App\updater.exe", run, r"C:\Program Files\App\app.exe"),
+            reg(2, r"C:\Windows\system32\msiexec.exe", run, r"C:\Program Files\B\b.exe"),
+            reg(3, r"C:\Windows\regedit.exe",
+                r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe\Debugger",
+                r"C:\Windows\System32\cmd.exe"),
+        ]
+        findings = sorted(run_rules(events), key=lambda f: f.first_seen)
+        self.assertEqual([(f.severity, f.mitre) for f in findings],
+                         [("high", ["T1547.001"]), ("medium", ["T1547.001"]), ("high", ["T1546.012"])])
+
+    def test_wmi_subscription_is_one_finding(self):
+        events = [
+            ev(19, 0, "WS01", SYSMON, Operation="Created", Name='"Upd"', Query='"SELECT * FROM __InstanceModificationEvent"'),
+            ev(20, 1, "WS01", SYSMON, Operation="Created", Name='"Upd"', Type="Command Line",
+               Destination='"powershell -enc AAAA"'),
+            ev(21, 2, "WS01", SYSMON, Operation="Created"),
+        ]
+        findings = run_rules(events)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].evidence["acción"], "powershell -enc AAAA")
+
+    def test_malicious_script_block(self):
+        block = ev(4104, 0, "WS01", "Microsoft-Windows-PowerShell/Operational", ScriptBlockId="1",
+                   ScriptBlockText="$m = [PSObject].Assembly.GetType('System.Management.Automation.AmsiUtils')")
+        dump = ev(4104, 1, "WS01", "Microsoft-Windows-PowerShell/Operational", ScriptBlockId="2",
+                  ScriptBlockText="... MiniDumpWriteDump($hProcess, $pid, $fs.SafeFileHandle, 2, ...)")
+        normal = ev(4104, 2, "WS01", "Microsoft-Windows-PowerShell/Operational", ScriptBlockId="3",
+                    ScriptBlockText="Get-ChildItem C:\\ | Sort-Object Length")
+        findings = sorted(run_rules([block, dump, normal]), key=lambda f: f.first_seen)
+        self.assertEqual([f.severity for f in findings], ["high", "critical"])
+        self.assertIn("T1685", findings[0].mitre)
 
 
 if __name__ == "__main__":

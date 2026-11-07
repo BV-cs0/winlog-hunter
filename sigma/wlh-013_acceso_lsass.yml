@@ -1,0 +1,65 @@
+title: 'Acceso a la memoria de LSASS'
+id: 7d7f52aa-ff5c-55d4-ab6f-8173a594a1e7
+status: experimental
+description: 'Sysmon 10: un proceso no confiable abre lsass.exe con permiso de lectura de memoria (PROCESS_VM_READ).'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.t1003.001
+logsource:
+    product: windows
+    category: process_access
+detection:
+    selection:
+        TargetImage|endswith: '\lsass.exe'
+        GrantedAccess|endswith:
+            - '10'
+            - '30'
+            - '50'
+            - '70'
+            - '90'
+            - 'B0'
+            - 'D0'
+            - 'F0'
+            - '18'
+            - '38'
+            - '58'
+            - '78'
+            - '98'
+            - 'B8'
+            - 'D8'
+            - 'F8'
+            - '1A'
+            - '3A'
+            - '5A'
+            - '7A'
+            - '9A'
+            - 'BA'
+            - 'DA'
+            - 'FA'
+            - 'FF'
+    filter_trusted:
+        SourceImage|startswith:
+            - 'C:\Windows\System32\'
+            - 'C:\Windows\SysWOW64\'
+            - 'C:\Program Files\'
+            - 'C:\Program Files (x86)\'
+            - 'C:\ProgramData\Microsoft\Windows Defender\'
+    selection_tool:
+        CallTrace|contains:
+            - 'dbghelp.dll'
+            - 'dbgcore.dll'
+            - 'comsvcs.dll'
+            - 'UNKNOWN('
+    condition: selection and (not filter_trusted or selection_tool)
+fields:
+    - SourceImage
+    - GrantedAccess
+    - CallTrace
+falsepositives:
+    - Antivirus y EDR de terceros no incluidos en el filtro
+level: critical
+# winlog-hunter: WLH-013

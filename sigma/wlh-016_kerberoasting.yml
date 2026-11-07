@@ -1,0 +1,32 @@
+title: 'Kerberoasting'
+id: 89015bc4-73aa-5c64-816b-23a70eb471fe
+status: experimental
+description: 'Evento 4769: ticket de servicio con cifrado RC4 (0x17) para una cuenta de usuario.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.t1558.003
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4769
+        TicketEncryptionType: '0x17'
+        Status: '0x0'
+    filter_machine:
+        ServiceName|endswith: '$'
+    filter_krbtgt:
+        ServiceName|startswith: 'krbtgt'
+    condition: selection and not 1 of filter_*
+fields:
+    - TargetUserName
+    - ServiceName
+    - IpAddress
+falsepositives:
+    - Aplicaciones antiguas que solo admiten RC4
+level: high
+# winlog-hunter: WLH-016

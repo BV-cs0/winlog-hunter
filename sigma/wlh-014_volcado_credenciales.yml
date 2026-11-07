@@ -1,0 +1,57 @@
+title: 'Comando de volcado de credenciales'
+id: 45c4fc2c-cd86-5761-bd80-98596ca10443
+status: experimental
+description: 'comsvcs MiniDump, procdump contra LSASS, ntdsutil IFM, reg save de SAM/SECURITY o comandos de Mimikatz.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.t1003.001
+    - attack.t1003.002
+    - attack.t1003.003
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_comsvcs:
+        CommandLine|contains|all:
+            - 'comsvcs'
+            - 'MiniDump'
+    selection_procdump:
+        CommandLine|contains|all:
+            - 'procdump'
+            - 'lsass'
+    selection_ntdsutil:
+        CommandLine|contains|all:
+            - 'ntdsutil'
+            - 'ifm'
+    selection_ntds:
+        CommandLine|contains: '\ntds.dit'
+    selection_reg:
+        CommandLine|contains: 'reg'
+        CommandLine|contains|all:
+            - ' save '
+            - 'HKLM\'
+    selection_reg_hive:
+        CommandLine|contains:
+            - '\SAM'
+            - '\SECURITY'
+            - '\SYSTEM'
+    selection_mimikatz:
+        CommandLine|contains:
+            - 'sekurlsa::'
+            - 'lsadump::'
+            - 'kerberos::golden'
+            - 'privilege::debug'
+    condition: selection_comsvcs or selection_procdump or selection_ntdsutil or selection_ntds or (selection_reg and selection_reg_hive) or selection_mimikatz
+fields:
+    - Image
+    - CommandLine
+    - ParentImage
+    - User
+falsepositives:
+    - Copias de seguridad del Directorio Activo planificadas
+level: critical
+# winlog-hunter: WLH-014

@@ -1,0 +1,40 @@
+title: Inicio de sesión fallido
+id: de4821fd-0829-5324-adda-c1f395797460
+name: winlog_hunter_failed_logon
+status: experimental
+description: Evento 4625. Regla base para las correlaciones de fuerza bruta y password spraying.
+author: Bryan Valenzuela
+date: 2026-11-07
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4625
+    filter_machine:
+        TargetUserName|endswith: '$'
+    condition: selection and not filter_machine
+level: informational
+---
+title: 'Fuerza bruta de credenciales'
+id: 8f33f97d-3c47-5d11-86c1-f9307c4bd26c
+status: experimental
+description: 'Cinco o más inicios de sesión fallidos contra la misma cuenta desde el mismo origen en 5 minutos.'
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.credential-access
+    - attack.t1110.001
+correlation:
+    type: event_count
+    rules:
+        - winlog_hunter_failed_logon
+    group-by:
+        - TargetUserName
+        - IpAddress
+        - Computer
+    timespan: 5m
+    condition:
+        gte: 5
+level: high
+# winlog-hunter: WLH-001

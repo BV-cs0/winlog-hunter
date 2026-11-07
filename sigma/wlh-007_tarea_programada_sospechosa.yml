@@ -1,0 +1,42 @@
+title: 'Tarea programada sospechosa'
+id: d5bce06d-815b-5a2f-bee3-9cddfcfaa88a
+status: experimental
+description: 'Evento 4698 de una tarea que lanza PowerShell, intérpretes de scripts o binarios desde rutas de usuario.'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1053.005
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4698
+    selection_command:
+        TaskContent|contains:
+            - 'powershell'
+            - 'pwsh'
+            - 'cmd.exe /c'
+            - 'mshta'
+            - 'rundll32'
+            - 'regsvr32'
+            - 'wscript'
+            - 'cscript'
+            - 'certutil'
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\Temp\'
+            - 'http://'
+            - 'https://'
+    condition: selection and selection_command
+fields:
+    - TaskName
+    - SubjectUserName
+falsepositives:
+    - Software que se actualiza con PowerShell
+level: high
+# winlog-hunter: WLH-007

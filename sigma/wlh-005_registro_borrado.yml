@@ -1,0 +1,47 @@
+title: 'Registro de eventos borrado'
+id: 9cf6ad84-56b4-5663-b5e1-a55e9a51923e
+status: experimental
+description: 'Se vació el registro Security (1102) o cualquier otro registro (104).'
+references:
+    - https://github.com/BV-cs0/winlog-hunter
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.defense-impairment
+    - attack.t1685.005
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 1102
+    condition: selection
+fields:
+    - SubjectUserName
+    - SubjectDomainName
+falsepositives:
+    - Mantenimiento planificado de los registros
+level: critical
+# winlog-hunter: WLH-005
+---
+title: Registro de eventos borrado (System)
+id: f9c272e0-05f9-5ef5-afec-0ad4821f760d
+status: experimental
+description: Evento 104 del canal System, se vació un registro de eventos.
+author: Bryan Valenzuela
+date: 2026-11-07
+tags:
+    - attack.defense-impairment
+    - attack.t1685.005
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 104
+        Provider_Name: Microsoft-Windows-Eventlog
+    condition: selection
+falsepositives:
+    - Mantenimiento planificado de los registros
+level: high
+# winlog-hunter: WLH-005
