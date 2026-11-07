@@ -1,6 +1,6 @@
 # winlog-hunter
 
-[![PyPI](https://img.shields.io/pypi/v/winlog-hunter)](https://pypi.org/project/winlog-hunter/) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/winlog-hunter?cacheSeconds=3600)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
 Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Sysmon** y **PowerShell**, detecta actividad sospechosa con 21 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
@@ -116,7 +116,7 @@ wevtutil epl System C:\temp\System.evtx
 winlog-hunter analyze C:\temp\Security.evtx C:\temp\System.evtx -o informe.html
 ```
 
-El formato del informe se elige por la extensión: `.html`, `.md` o `.json`. También acepta `.xml` de `wevtutil qe` y JSON de Winlogbeat o de un SIEM. En Linux/macOS, para leer `.evtx` instala antes `python3 -m pip install ".[evtx]"`.
+El formato del informe se elige por la extensión: `.html`, `.md` o `.json`. También acepta `.xml` de `wevtutil qe` y JSON de Winlogbeat o de un SIEM. En Linux/macOS, para leer `.evtx` instala antes `python3 -m pip install "winlog-hunter[evtx]"`.
 
 ## Análisis automático diario del propio equipo (Windows)
 
