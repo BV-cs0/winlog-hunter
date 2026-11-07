@@ -14,20 +14,25 @@ python -m pip install .
 
 ## Uso
 
-Abre PowerShell **como administrador** (sin administrador no se puede leer el log Security), entra en la carpeta del proyecto y:
+**1. Abre PowerShell como administrador** y entra en la carpeta del proyecto:
 
 ```powershell
-# EJECUTA esto para iniciar el informe
+cd winlog-hunter
+```
+
+**2. Genera el informe** con los logs de las últimas 24 horas de tu equipo:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\analisis-diario.ps1
 ```
 
-Analiza los logs de las últimas 24 horas de tu equipo. Al terminar verás:
+**3. Abre el informe.** Se guarda en `Documentos\winlog-hunter` con la fecha en el nombre:
 
-```text
-Informe: C:\Users\<tu-usuario>\Documents\winlog-hunter\informe_<fecha>.html
+```powershell
+start $HOME\Documents\winlog-hunter
 ```
 
-Tu informe se ha guardado en **`Documentos\winlog-hunter`**: ábrelo con doble clic. Para analizar más horas añade `-Horas 72`.
+> Para analizar más tiempo añade `-Horas 72`. Sin administrador también funciona, pero se omite el log Security.
 
 ## Cómo sacar los logs de un equipo Windows manualmente
 
