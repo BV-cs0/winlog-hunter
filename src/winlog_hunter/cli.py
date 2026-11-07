@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -21,7 +22,7 @@ _EXTENSION_FORMAT = {".json": "json", ".md": "markdown", ".markdown": "markdown"
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="winlog-hunter",
-        description="Analiza logs de Windows (Security, System, Sysmon) y detecta actividad "
+        description="Analiza logs de Windows (Security, System, Sysmon, PowerShell) y detecta actividad "
         "sospechosa mapeada a MITRE ATT&CK.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -41,7 +42,99 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--no-color", action="store_true", help="desactiva los colores en consola")
 
     sub.add_parser("rules", help="lista las reglas de detección")
+
+    notify_choices = (*SEVERITIES, "nunca")
+    local = sub.add_parser(
+        "equipo",
+        help="analiza los logs de este equipo (Windows) y abre el informe",
+        description="Exporta Security, System, PowerShell y Sysmon de las últimas horas, los analiza y guarda "
+        "el informe en Documentos\\winlog-hunter. Ejecútalo como administrador para incluir Security.",
+    )
+    local.add_argument("--horas", type=int, default=24, help="horas hacia atrás que se analizan (24)")
+    local.add_argument("--salida", type=Path, help="carpeta de los informes (Documentos\\winlog-hunter)")
+    local.add_argument("--conservar-dias", type=int, default=30, help="borra informes más antiguos (30)")
+    local.add_argument("--avisar-desde", choices=notify_choices, default="critical",
+                       help="aviso en pantalla desde esta severidad (critical)")
+    local.add_argument("--sin-abrir", action="store_true", help="no abre el informe al terminar")
+
+    sched = sub.add_parser(
+        "programar",
+        help="programa el análisis diario del equipo (Windows, como administrador)",
+        description="Crea la tarea programada 'winlog-hunter diario', que ejecuta 'winlog-hunter equipo' cada día "
+        "como SYSTEM. Si el equipo está apagado a esa hora, se ejecuta al encenderlo.",
+    )
+    sched.add_argument("--hora", default="09:00", help="hora del día, HH:MM (09:00)")
+    sched.add_argument("--horas", type=int, default=24, help="horas de logs que analiza cada día (24)")
+    sched.add_argument("--salida", type=Path, help="carpeta de los informes (Documentos\\winlog-hunter)")
+    sched.add_argument("--avisar-desde", choices=notify_choices, default="critical",
+                       help="aviso en pantalla desde esta severidad (critical)")
+    group = sched.add_mutually_exclusive_group()
+    group.add_argument("--ahora", action="store_true", help="lanza la tarea ya, sin esperar")
+    group.add_argument("--quitar", action="store_true", help="elimina la tarea")
+    group.add_argument("--estado", action="store_true", help="muestra si la tarea existe")
     return parser
+
+
+def _local(args: argparse.Namespace) -> int:
+    from . import local
+
+    if not 1 <= args.horas <= 8760 or args.conservar_dias < 1:
+        print("error: --horas debe estar entre 1 y 8760 y --conservar-dias ser al menos 1", file=sys.stderr)
+        return 2
+    try:
+        local.require_windows()
+        if not local.is_admin():
+            print("Aviso: sin administrador no se puede leer el log Security.", file=sys.stderr)
+        result = local.analyze_this_computer(
+            hours=args.horas,
+            output=args.salida,
+            keep_days=args.conservar_dias,
+            notify_from=None if args.avisar_desde == "nunca" else args.avisar_desde,
+        )
+    except local.LocalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not args.sin_abrir:
+        try:
+            os.startfile(result.html)  # type: ignore[attr-defined]
+        except OSError:
+            pass
+    return result.exit_code
+
+
+def _schedule(args: argparse.Namespace) -> int:
+    from . import local
+
+    try:
+        if args.estado:
+            status = local.task_status()
+            print(f"Tarea '{local.TASK_NAME}': {status}" if status else
+                  f"La tarea '{local.TASK_NAME}' no existe (o hace falta administrador para verla).")
+            return 0 if status else 1
+        if args.quitar:
+            removed = local.unschedule()
+            print(f"Tarea '{local.TASK_NAME}' eliminada." if removed else f"La tarea '{local.TASK_NAME}' no existía.")
+            return 0
+        if args.ahora:
+            local.run_now()
+            print(f"Tarea lanzada. El informe aparecerá en unos segundos en {args.salida or local.default_output()}")
+            return 0
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", args.hora):
+            print("error: --hora debe tener el formato HH:MM, p. ej. 21:30", file=sys.stderr)
+            return 2
+        if not 1 <= args.horas <= 8760:
+            print("error: --horas debe estar entre 1 y 8760", file=sys.stderr)
+            return 2
+        output = args.salida or local.default_output()
+        local.schedule(args.hora, args.horas, output, "nunca" if args.avisar_desde == "nunca" else args.avisar_desde)
+    except local.LocalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"Tarea '{local.TASK_NAME}' creada: cada día a las {args.hora}, últimas {args.horas} h.")
+    print(f"Informes en: {output}")
+    print("Para probarla ya:  winlog-hunter programar --ahora")
+    print("Para quitarla:     winlog-hunter programar --quitar")
+    return 0
 
 
 def _enable_ansi() -> bool:
@@ -146,6 +239,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "rules":
         return _list_rules()
+    if args.command == "equipo":
+        return _local(args)
+    if args.command == "programar":
+        return _schedule(args)
     return _analyze(args)
 
 

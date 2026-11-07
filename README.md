@@ -14,35 +14,21 @@ Necesitas Python 3.9 o superior.
 python -m pip install winlog-hunter
 ```
 
-Para usar también el análisis automático diario (los scripts de PowerShell), clona el repositorio:
-
-```bash
-git clone https://github.com/BV-cs0/winlog-hunter.git
-cd winlog-hunter
-python -m pip install .
-```
+Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`.
 
 ## Uso
 
-**1. Abre PowerShell como administrador** y entra en la carpeta del proyecto:
+**1. Abre PowerShell como administrador** (sin administrador funciona, pero se omite el log Security).
+
+**2. Analiza tu equipo:**
 
 ```powershell
-cd winlog-hunter
+winlog-hunter equipo
 ```
 
-**2. Genera el informe** con los logs de las últimas 24 horas de tu equipo:
+Exporta los logs de las últimas 24 horas, los analiza y abre el informe en el navegador. Se guarda en `Documentos\winlog-hunter` con la fecha en el nombre.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\analisis-diario.ps1
-```
-
-**3. Abre el informe.** Se guarda en `Documentos\winlog-hunter` con la fecha en el nombre:
-
-```powershell
-start $HOME\Documents\winlog-hunter
-```
-
-> Para analizar más tiempo añade `-Horas 72`. Sin administrador también funciona, pero se omite el log Security.
+> Para analizar más tiempo: `winlog-hunter equipo --horas 72`. Todas las opciones: `winlog-hunter equipo --help`.
 
 ## Detecciones
 
@@ -115,7 +101,7 @@ New-Item -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockL
     New-ItemProperty -Name EnableScriptBlockLogging -Value 1 -PropertyType DWord -Force
 ```
 
-El análisis diario incluye Sysmon y PowerShell en cuanto existen.
+`winlog-hunter equipo` incluye Sysmon y PowerShell en cuanto existen.
 
 ## Cómo sacar los logs de un equipo Windows manualmente
 
@@ -137,33 +123,28 @@ El formato del informe se elige por la extensión: `.html`, `.md` o `.json`. Tam
 Para que el informe se genere solo cada día, en PowerShell **como administrador**:
 
 ```powershell
-# Programarlo cada día a las 09:00
-powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1
-
-# A otra hora
-powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1 -Hora 21:30
-
-# Lanzarlo ahora sin esperar
-Start-ScheduledTask -TaskName 'winlog-hunter diario'
-
-# Quitarlo
-powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1 -Desinstalar
+winlog-hunter programar                 # cada día a las 09:00
+winlog-hunter programar --hora 21:30    # a otra hora
+winlog-hunter programar --ahora         # lanzarlo ya, sin esperar
+winlog-hunter programar --estado        # comprobar que existe
+winlog-hunter programar --quitar        # eliminarlo
 ```
 
-- Si hay algún hallazgo **crítico**, aparece un aviso en pantalla con el resumen y la ruta del informe.
+- Si hay algún hallazgo **crítico**, aparece un aviso en pantalla con el resumen y la ruta del informe. Con `--avisar-desde high` también avisa de los de severidad alta.
 - Los informes se guardan en `Documentos\winlog-hunter` y los de más de 30 días se borran solos.
 - `ejecuciones.log`, en la misma carpeta, guarda un resumen de cada ejecución.
 - Si el equipo está apagado a la hora programada, se ejecuta al encenderlo.
-- Si mueves la carpeta del proyecto, vuelve a ejecutar el instalador.
+- Al actualizar winlog-hunter con pip, la tarea usa la versión nueva sin volver a programarla.
 
 ## Reglas Sigma
 
-La carpeta [`sigma/`](sigma/) tiene las 21 detecciones en formato Sigma, validadas con `sigma check`. Se convierten a la consulta de tu SIEM (Splunk, Elastic, Microsoft Sentinel, QRadar...):
+La carpeta [`sigma/`](sigma/) del repositorio tiene las 21 detecciones en formato Sigma, validadas con `sigma check`. Se convierten a la consulta de tu SIEM (Splunk, Elastic, Microsoft Sentinel, QRadar...):
 
 ```bash
+git clone https://github.com/BV-cs0/winlog-hunter.git
 python -m pip install sigma-cli
 sigma plugin install splunk
-sigma convert -t splunk -p windows-audit -p splunk_windows sigma/
+sigma convert -t splunk -p windows-audit -p splunk_windows winlog-hunter/sigma/
 ```
 
 ## Seguridad del propio analizador
@@ -182,10 +163,8 @@ src/winlog_hunter/
   parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
   rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
   report.py    informe en consola, HTML, Markdown y JSON
-  cli.py       comando winlog-hunter
-scripts/
-  analisis-diario.ps1   exporta los logs del equipo, genera el informe y avisa
-  instalar-tarea.ps1    programa el análisis diario
+  local.py     análisis del propio equipo, aviso en pantalla y tarea programada
+  cli.py       comando winlog-hunter (analyze, equipo, programar, rules)
 sigma/         las reglas en formato Sigma
 docs/          captura del informe
 samples/       datos sintéticos que usan los tests
