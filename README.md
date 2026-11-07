@@ -30,6 +30,8 @@ Exporta los logs de las últimas 24 horas, los analiza y abre el informe en el n
 
 > Para analizar más tiempo: `winlog-hunter equipo --horas 72`. Todas las opciones: `winlog-hunter equipo --help`.
 
+La primera vez, [prepara el equipo](#preparar-el-equipo-recomendado) para que Windows guarde todos los eventos que usan las reglas.
+
 ## Detecciones
 
 | ID | Detección | Eventos | MITRE ATT&CK |
@@ -80,7 +82,26 @@ No se cuentan los ficheros en los que solo salta *registro borrado*, porque el a
 
 Los puntos débiles son claros: la **escalada de privilegios** (bypass de UAC, tokens, servicios vulnerables) y la **evasión de defensas**. Casi todos esos ataques necesitan reglas de Sysmon 7 (carga de DLL), 8 (hilos remotos) y 11 (ficheros creados), que aún no están implementadas.
 
-## Activar Sysmon (recomendado)
+## Preparar el equipo (recomendado)
+
+Windows no guarda por defecto muchos de los eventos que usan las reglas. Dos comandos, en PowerShell como administrador, lo dejan listo:
+
+```powershell
+winlog-hunter auditoria --activar
+winlog-hunter sysmon --instalar
+```
+
+### Auditoría de Windows
+
+`winlog-hunter auditoria --activar` activa:
+
+- La auditoría de **creación de procesos (4688) con la línea de comandos**, de **tareas programadas (4698)**, de cuentas (4720), de grupos (4728, 4732) y de inicios de sesión correctos y fallidos (4624, 4625).
+- El **Script Block Logging de PowerShell (4104)**, que necesita la regla WLH-021.
+- Un tamaño mayor para los registros Security (128 MB), PowerShell (64 MB) y Sysmon (128 MB), para que quepan 24 horas de eventos.
+
+Antes de cambiar nada guarda la configuración original, y `winlog-hunter auditoria --restaurar` la deja como estaba. `winlog-hunter auditoria --estado` muestra qué está activado. Usa los GUID de las subcategorías de auditoría, así que funciona con Windows en cualquier idioma.
+
+### Sysmon
 
 Sin Sysmon, Windows no registra los procesos que se ejecutan, los accesos a LSASS ni los cambios en el registro, así que 9 de las 21 reglas no tienen datos. Sysmon es gratuito y de Microsoft. En PowerShell como administrador:
 
@@ -94,13 +115,6 @@ Descarga Sysmon de la web oficial de Microsoft, comprueba que está firmado por 
 winlog-hunter sysmon --estado        # comprobar que está instalado
 winlog-hunter sysmon --actualizar    # aplicar la configuración de una versión nueva de winlog-hunter
 winlog-hunter sysmon --desinstalar   # quitarlo
-```
-
-Para la regla WLH-021, activa también el registro de bloques de script de PowerShell:
-
-```powershell
-New-Item -Path HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging -Force |
-    New-ItemProperty -Name EnableScriptBlockLogging -Value 1 -PropertyType DWord -Force
 ```
 
 `winlog-hunter equipo` incluye Sysmon y PowerShell en cuanto existen.
@@ -165,9 +179,9 @@ src/winlog_hunter/
   parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
   rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
   report.py    informe en consola, HTML, Markdown y JSON
-  local.py     análisis del propio equipo, aviso, tarea programada y Sysmon
+  local.py     análisis del propio equipo, aviso, tarea programada, auditoría y Sysmon
   data/sysmon.xml   configuración de Sysmon para las reglas
-  cli.py       comando winlog-hunter (analyze, equipo, programar, sysmon, rules)
+  cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, rules)
 sigma/         las reglas en formato Sigma
 docs/          captura del informe
 samples/       datos sintéticos que usan los tests

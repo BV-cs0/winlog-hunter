@@ -85,7 +85,44 @@ def build_parser() -> argparse.ArgumentParser:
     action.add_argument("--desinstalar", action="store_true", help="desinstala Sysmon")
     action.add_argument("--estado", action="store_true", help="muestra si Sysmon está instalado")
     action.add_argument("--config", action="store_true", help="muestra la ruta de la configuración incluida")
+
+    audit = sub.add_parser(
+        "auditoria",
+        help="activa la auditoría de Windows que necesitan las reglas (Windows, como administrador)",
+        description="Activa la auditoría de creación de procesos (con línea de comandos), tareas programadas, "
+        "cuentas, grupos y servicios, el Script Block Logging de PowerShell, y amplía el tamaño de los registros. "
+        "Guarda la configuración original para poder restaurarla.",
+    )
+    audit_action = audit.add_mutually_exclusive_group(required=True)
+    audit_action.add_argument("--activar", action="store_true", help="activa la auditoría")
+    audit_action.add_argument("--restaurar", action="store_true", help="vuelve a la configuración original")
+    audit_action.add_argument("--estado", action="store_true", help="muestra qué está activado")
     return parser
+
+
+def _audit(args: argparse.Namespace) -> int:
+    from . import local
+
+    try:
+        local.require_windows()
+        if args.estado:
+            rows = local.audit_status()
+            marks = {True: "[x]", False: "[ ]", None: "[?]"}
+            for label, enabled in rows:
+                print(f"{marks[enabled]} {label}")
+            if any(enabled is None for _, enabled in rows):
+                print("[?] = hace falta administrador para comprobarlo", file=sys.stderr)
+            return 0 if all(rows_enabled for _, rows_enabled in rows) else 1
+        if args.activar:
+            local.audit_enable()
+            print("Auditoría activada. Para volver atrás: winlog-hunter auditoria --restaurar")
+        else:
+            local.audit_restore()
+            print("Auditoría restaurada a la configuración original.")
+    except local.LocalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def _sysmon(args: argparse.Namespace) -> int:
@@ -286,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
         return _schedule(args)
     if args.command == "sysmon":
         return _sysmon(args)
+    if args.command == "auditoria":
+        return _audit(args)
     return _analyze(args)
 
 

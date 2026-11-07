@@ -69,6 +69,23 @@ class ScheduledTask(unittest.TestCase):
         self.assertEqual(root.find("t:Settings/t:StartWhenAvailable", NS).text, "true")
 
 
+class AuditPolicy(unittest.TestCase):
+    def test_plan_uses_guids_so_it_works_in_any_language(self):
+        plan = local.audit_plan()
+        auditpol = [c for c in plan if c[0] == "auditpol"]
+        self.assertEqual(len(auditpol), len(local.AUDIT_SUBCATEGORIES))
+        for command in auditpol:
+            self.assertRegex(command[2], r"^/subcategory:\{[0-9A-F-]{36}\}$")
+            self.assertIn("/success:enable", command)
+
+    def test_plan_enables_process_creation_and_powershell_logging(self):
+        plan = [" ".join(c) for c in local.audit_plan()]
+        self.assertTrue(any("{0CCE922B-69AE-11D9-BED3-505054503030}" in c for c in plan))  # 4688
+        self.assertTrue(any("{0CCE9227-69AE-11D9-BED3-505054503030}" in c for c in plan))  # 4698
+        self.assertTrue(any("EnableScriptBlockLogging" in c for c in plan))
+        self.assertTrue(any("ProcessCreationIncludeCmdLine_Enabled" in c for c in plan))
+
+
 class SysmonConfig(unittest.TestCase):
     def setUp(self):
         self.root = ET.parse(local.SYSMON_CONFIG).getroot()

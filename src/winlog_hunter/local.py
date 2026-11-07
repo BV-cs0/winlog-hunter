@@ -9,6 +9,7 @@ aunque se actualice el paquete con pip.
 from __future__ import annotations
 
 import csv
+import json
 import os
 import shutil
 import subprocess
@@ -374,6 +375,139 @@ def sysmon_uninstall() -> None:
     proc = _run([f"{service}.exe", "-u"])
     if proc.returncode != 0 or sysmon_service():
         raise LocalError("no se pudo desinstalar Sysmon:\n" + (proc.stdout + proc.stderr).strip())
+
+
+# --------------------------------------------------------------------------- #
+# Auditoría de Windows
+# --------------------------------------------------------------------------- #
+
+# Subcategorías por GUID: auditpol acepta GUIDs en cualquier idioma de Windows.
+AUDIT_SUBCATEGORIES = [
+    ("{0CCE9215-69AE-11D9-BED3-505054503030}", "Inicio de sesión", "4624, 4625", "/success:enable /failure:enable"),
+    ("{0CCE922B-69AE-11D9-BED3-505054503030}", "Creación de procesos", "4688", "/success:enable"),
+    ("{0CCE9227-69AE-11D9-BED3-505054503030}", "Otros eventos de acceso a objetos", "4698", "/success:enable"),
+    ("{0CCE9235-69AE-11D9-BED3-505054503030}", "Administración de cuentas de usuario", "4720", "/success:enable"),
+    ("{0CCE9237-69AE-11D9-BED3-505054503030}", "Administración de grupos de seguridad", "4728, 4732", "/success:enable"),
+]
+AUDIT_REGISTRY = [
+    (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging", "EnableScriptBlockLogging",
+     "Script Block Logging de PowerShell (4104)"),
+    (r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit", "ProcessCreationIncludeCmdLine_Enabled",
+     "línea de comandos en el evento 4688"),
+]
+# Tamaño mínimo de los registros, para que quepan al menos 24 h de eventos.
+AUDIT_LOG_SIZES = {
+    "Security": 128 * 1024 * 1024,
+    "Microsoft-Windows-PowerShell/Operational": 64 * 1024 * 1024,
+    "Microsoft-Windows-Sysmon/Operational": 128 * 1024 * 1024,
+}
+AUDIT_BACKUP_DIR = SYSMON_INSTALL_DIR / "auditoria-original"
+
+
+def audit_plan() -> list[list[str]]:
+    """Comandos que activan la auditoría que necesitan las reglas."""
+    commands = [["auditpol", "/set", f"/subcategory:{guid}", *flags.split()] for guid, _, _, flags in AUDIT_SUBCATEGORIES]
+    commands += [["reg", "add", key, "/v", value, "/t", "REG_DWORD", "/d", "1", "/f"] for key, value, _ in AUDIT_REGISTRY]
+    return commands
+
+
+def _log_size(log: str) -> int | None:
+    proc = _run(["wevtutil", "gl", log])
+    for line in proc.stdout.splitlines():
+        if line.strip().lower().startswith("maxsize:"):
+            return int(line.split(":", 1)[1].strip())
+    return None
+
+
+def _registry_value(key: str, value: str) -> str | None:
+    proc = _run(["reg", "query", key, "/v", value])
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if parts and parts[0] == value:
+            return parts[-1]
+    return None
+
+
+def audit_enable(log: Callable[[str], None] = print) -> None:
+    """Activa la auditoría de Windows que usan las reglas y guarda la configuración anterior."""
+    require_windows()
+    _require_admin("activar la auditoría")
+    AUDIT_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup = AUDIT_BACKUP_DIR / "auditpol.csv"
+    state = AUDIT_BACKUP_DIR / "estado.json"
+    if not backup.exists():  # se guarda solo la primera vez: es el estado original del equipo
+        proc = _run(["auditpol", "/backup", f"/file:{backup}"])
+        if proc.returncode != 0:
+            raise LocalError("no se pudo guardar la política de auditoría actual: " + " ".join(proc.stdout.split()))
+        original = {
+            "registro": {f"{k}\\{v}": _registry_value(k, v) for k, v, _ in AUDIT_REGISTRY},
+            "tamaños": {name: _log_size(name) for name in AUDIT_LOG_SIZES},
+        }
+        state.write_text(json.dumps(original, indent=2), encoding="utf-8")
+        log(f"Configuración original guardada en {AUDIT_BACKUP_DIR}")
+
+    for command, (_, label, events, _) in zip(audit_plan(), AUDIT_SUBCATEGORIES):
+        proc = _run(command)
+        log(f"  {'OK   ' if proc.returncode == 0 else 'FALLO'} auditoría: {label} ({events})")
+    for command, (_, _, label) in zip(audit_plan()[len(AUDIT_SUBCATEGORIES):], AUDIT_REGISTRY):
+        proc = _run(command)
+        log(f"  {'OK   ' if proc.returncode == 0 else 'FALLO'} {label}")
+    for name, size in AUDIT_LOG_SIZES.items():
+        current = _log_size(name)
+        if current is None:
+            continue
+        if current < size:
+            ok = _run(["wevtutil", "sl", name, f"/ms:{size}"]).returncode == 0
+            log(f"  {'OK   ' if ok else 'FALLO'} tamaño de {name}: {current // 2**20} MB -> {size // 2**20} MB")
+
+
+def audit_restore(log: Callable[[str], None] = print) -> None:
+    """Deja la auditoría como estaba antes de 'auditoria --activar'."""
+    require_windows()
+    _require_admin("restaurar la auditoría")
+    backup = AUDIT_BACKUP_DIR / "auditpol.csv"
+    state = AUDIT_BACKUP_DIR / "estado.json"
+    if not backup.exists() or not state.exists():
+        raise LocalError("no hay configuración guardada: la auditoría no se activó con winlog-hunter")
+    proc = _run(["auditpol", "/restore", f"/file:{backup}"])
+    log(f"  {'OK   ' if proc.returncode == 0 else 'FALLO'} política de auditoría restaurada")
+    original = json.loads(state.read_text(encoding="utf-8"))
+    for key, value, label in AUDIT_REGISTRY:
+        previous = original["registro"].get(f"{key}\\{value}")
+        if previous is None:
+            _run(["reg", "delete", key, "/v", value, "/f"])
+        else:
+            _run(["reg", "add", key, "/v", value, "/t", "REG_DWORD", "/d", str(int(previous, 0)), "/f"])
+        log(f"  OK    {label} restaurado")
+    for name, size in original["tamaños"].items():
+        if size:
+            _run(["wevtutil", "sl", name, f"/ms:{size}"])
+    log("  OK    tamaños de los registros restaurados")
+    shutil.rmtree(AUDIT_BACKUP_DIR, ignore_errors=True)
+
+
+def audit_status() -> list[tuple[str, bool | None]]:
+    """(descripción, activado) de cada ajuste. None si no se puede saber sin administrador."""
+    require_windows()
+    rows: list[tuple[str, bool | None]] = []
+    for guid, label, events, flags in AUDIT_SUBCATEGORIES:
+        proc = _run(["auditpol", "/get", f"/subcategory:{guid}", "/r"])
+        if proc.returncode != 0:
+            rows.append((f"auditoría: {label} ({events})", None))
+            continue
+        lines = [line for line in proc.stdout.splitlines() if line.strip()]
+        setting = next(csv.reader([lines[-1]]), [""] * 5)[4].lower() if len(lines) > 1 else ""
+        wanted_failure = "failure" in flags
+        enabled = bool(setting) and setting not in ("no auditing", "sin auditoría") and (
+            not wanted_failure or any(w in setting for w in ("and", " y ")))
+        rows.append((f"auditoría: {label} ({events})", enabled))
+    for key, value, label in AUDIT_REGISTRY:
+        rows.append((label, _registry_value(key, value) in ("0x1", "1")))
+    for name, size in AUDIT_LOG_SIZES.items():
+        current = _log_size(name)
+        if current is not None:
+            rows.append((f"tamaño de {name} ({current // 2**20} MB)", current >= size))
+    return rows
 
 
 def task_status() -> str | None:
