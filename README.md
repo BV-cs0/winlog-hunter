@@ -44,10 +44,26 @@ Algunos detalles que reducen falsos positivos:
 
 ## Instalación
 
+Necesitas Python 3.9 o superior y git.
+
 ```bash
 git clone https://github.com/BV-cs0/winlog-hunter.git
 cd winlog-hunter
-pip install .            # en Linux/macOS: pip install .[evtx]  para leer .evtx
+python -m pip install .
+```
+
+En Linux/macOS, para leer ficheros `.evtx` instala también el extra (las comillas son necesarias en zsh):
+
+```bash
+python3 -m pip install ".[evtx]"
+```
+
+En Windows no hace falta: los `.evtx` se leen con `wevtutil`, que ya viene con el sistema.
+
+Comprueba que quedó instalado:
+
+```bash
+winlog-hunter --version
 ```
 
 También funciona sin instalar: `python -m winlog_hunter ...` desde `src/`.
