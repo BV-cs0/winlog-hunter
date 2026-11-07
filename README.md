@@ -45,7 +45,7 @@ Algunos detalles que reducen falsos positivos:
 ## Instalación
 
 ```bash
-git clone https://github.com/<tu-usuario>/winlog-hunter.git
+git clone https://github.com/BV-cs0/winlog-hunter.git
 cd winlog-hunter
 pip install .            # en Linux/macOS: pip install .[evtx]  para leer .evtx
 ```
