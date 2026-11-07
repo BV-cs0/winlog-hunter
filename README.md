@@ -107,6 +107,27 @@ winlog-hunter analyze security.xml system.xml sysmon.xml -o informe.html
 
 También acepta JSON por línea (JSONL), arrays JSON y exportaciones con campos planos o anidados en `EventData`, como las de Winlogbeat o las de un SIEM.
 
+### Análisis automático diario del propio equipo (Windows)
+
+[`scripts/analisis-diario.ps1`](scripts/analisis-diario.ps1) exporta los logs reales del equipo (Security, System y Sysmon si está instalado) de las últimas 24 h, los analiza y guarda `informe_<fecha>.html` y `.json` en `Documentos\winlog-hunter`. Los `.evtx` exportados se borran al terminar y los informes de más de 30 días se eliminan solos. Cada ejecución deja una línea de resumen en `ejecuciones.log`.
+
+```powershell
+# Ejecutarlo a mano (sin administrador se omite Security)
+powershell -ExecutionPolicy Bypass -File .\scripts\analisis-diario.ps1
+
+# Programarlo cada día a las 09:00 (PowerShell abierto como administrador)
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1 -Hora 21:30   # otra hora
+
+# Probar la tarea ya, sin esperar
+Start-ScheduledTask -TaskName 'winlog-hunter diario'
+
+# Quitarla
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar-tarea.ps1 -Desinstalar
+```
+
+La tarea se ejecuta como `SYSTEM` para poder leer Security y, si el equipo estaba apagado a esa hora, se lanza al encenderlo. Usa la ruta del script, así que si mueves la carpeta del repositorio vuelve a ejecutar el instalador.
+
 ## Seguridad del propio analizador
 
 Los logs pueden contener datos controlados por un atacante (nombres de usuario, líneas de comandos, nombres de tareas), así que la herramienta los trata como entrada hostil:
@@ -144,6 +165,7 @@ src/winlog_hunter/
   report.py    salida en consola, JSON, Markdown y HTML
   cli.py       interfaz de línea de comandos
 samples/       generador y escenario de ataque sintético
+scripts/       análisis diario automático del propio equipo (PowerShell)
 tests/         tests unitarios y de extremo a extremo
 ```
 
