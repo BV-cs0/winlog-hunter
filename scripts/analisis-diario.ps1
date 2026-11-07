@@ -3,7 +3,7 @@
     Exporta los logs reales de este equipo, los analiza con winlog-hunter y guarda el informe.
 
 .DESCRIPTION
-    Exporta Security, System y Sysmon (si está instalado) de las últimas N horas con wevtutil,
+    Exporta Security, System, PowerShell y Sysmon (si está instalado) de las últimas N horas con wevtutil,
     los analiza con winlog-hunter y deja un informe HTML y otro JSON con la fecha en el nombre.
     Los .evtx exportados se borran al terminar: solo se guardan los informes.
 
@@ -27,7 +27,14 @@ param(
 
     # Los informes más antiguos que esto se borran.
     [ValidateRange(1, 3650)]
-    [int]$ConservarDias = 30
+    [int]$ConservarDias = 30,
+
+    # Muestra un aviso en pantalla si hay hallazgos de esta severidad o mayor.
+    [ValidateSet('critical', 'high', 'medium', 'low')]
+    [string]$AvisarDesde = 'critical',
+
+    # No muestra ningún aviso en pantalla.
+    [switch]$SinAviso
 )
 
 $ErrorActionPreference = 'Continue'
@@ -49,7 +56,7 @@ try {
 
     $milisegundos = [int64]$Horas * 3600 * 1000
     $consulta = "*[System[TimeCreated[timediff(@SystemTime) <= $milisegundos]]]"
-    $registros = 'Security', 'System', 'Microsoft-Windows-Sysmon/Operational'
+    $registros = 'Security', 'System', 'Microsoft-Windows-Sysmon/Operational', 'Microsoft-Windows-PowerShell/Operational'
     $exportados = @()
     # wevtutil el lista los registros sin necesitar permisos (Get-WinEvent -ListLog falla con Security).
     $existentes = & wevtutil.exe el
@@ -97,6 +104,19 @@ try {
     Get-ChildItem -Path $Salida -Filter 'informe_*' -File |
         Where-Object { $_.LastWriteTime -lt $limite } |
         Remove-Item -Force
+
+    $orden = 'low', 'medium', 'high', 'critical'
+    $minimo = [array]::IndexOf($orden, $AvisarDesde)
+    $graves = @($datos.findings | Where-Object { [array]::IndexOf($orden, $_.severity) -ge $minimo })
+    if ($graves.Count -gt 0 -and -not $SinAviso) {
+        $etiquetas = @{ critical = 'CRÍTICA'; high = 'ALTA'; medium = 'MEDIA'; low = 'BAJA' }
+        $lineas = $graves | Select-Object -First 5 | ForEach-Object { "[{0}] {1}" -f $etiquetas[$_.severity], $_.summary }
+        $texto = "winlog-hunter: {0} hallazgo(s) importantes en {1}`n`n{2}`n`nInforme: {3}" -f `
+            $graves.Count, $env:COMPUTERNAME, ($lineas -join "`n"), $html
+        # msg.exe llega al escritorio del usuario aunque la tarea se ejecute como SYSTEM.
+        & msg.exe * /TIME:43200 $texto 2>&1 | Out-Null
+        Escribir "  Aviso mostrado en pantalla ($($graves.Count) hallazgo(s))"
+    }
 
     if ([int]$s.critical -gt 0) { exit 1 }
     exit 0
