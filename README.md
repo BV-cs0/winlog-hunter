@@ -76,4 +76,19 @@ Los logs pueden contener datos controlados por un atacante (nombres de usuario, 
 - **XML.** Se rechazan los documentos con `DOCTYPE` (protección frente a XXE y billion laughs).
 - **Markdown.** Se escapan los caracteres especiales.
 
+## Estructura
+
+```text
+src/winlog_hunter/
+  parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
+  rules.py     reglas de detección mapeadas a MITRE ATT&CK
+  report.py    informe en consola, HTML, Markdown y JSON
+  cli.py       comando winlog-hunter
+scripts/
+  analisis-diario.ps1   exporta los logs del equipo y genera el informe
+  instalar-tarea.ps1    programa el análisis diario
+samples/       datos sintéticos que usan los tests
+tests/         tests automáticos
+```
+
 Úsalo solo con logs de equipos que tengas autorización para analizar. Licencia MIT.
