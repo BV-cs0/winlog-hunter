@@ -1,5 +1,6 @@
 # winlog-hunter
-n[![PyPI](https://img.shields.io/pypi/v/winlog-hunter)](https://pypi.org/project/winlog-hunter/) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
+
+[![PyPI](https://img.shields.io/pypi/v/winlog-hunter)](https://pypi.org/project/winlog-hunter/) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
 Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Sysmon** y **PowerShell**, detecta actividad sospechosa con 21 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
