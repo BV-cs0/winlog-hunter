@@ -1,6 +1,6 @@
 # winlog-hunter
 
-[![PyPI](https://img.shields.io/badge/PyPI-v0.5.0-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.5.1-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
 Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Sysmon** y **PowerShell**, detecta actividad sospechosa con 21 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
@@ -16,12 +16,7 @@ python -m pip install winlog-hunter
 
 Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`.
 
-> **¿Windows dice que no reconoce `winlog-hunter`?** Pasa cuando la carpeta `Scripts` de Python no está en el PATH (pip lo avisa al instalar). Puedes usar siempre `python -m winlog_hunter` en su lugar, por ejemplo `python -m winlog_hunter equipo`, o añadir esa carpeta al PATH de tu usuario y abrir una consola nueva:
->
-> ```powershell
-> $scripts = python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
-> [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$scripts", 'User')
-> ```
+> **¿Windows dice que no reconoce `winlog-hunter`?** Algunas instalaciones de Python no ponen su carpeta `Scripts` en el PATH. Usa `python -m winlog_hunter` (con guion bajo), por ejemplo `python -m winlog_hunter equipo`: funciona igual y, de paso, añade esa carpeta al PATH de tu usuario. Desde la siguiente consola que abras, `winlog-hunter` funcionará directamente.
 
 ## Uso
 
@@ -187,6 +182,7 @@ src/winlog_hunter/
   rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
   report.py    informe en consola, HTML, Markdown y JSON
   local.py     análisis del propio equipo, aviso, tarea programada, auditoría y Sysmon
+  pathfix.py   deja el comando winlog-hunter en el PATH si pip no lo hizo
   data/sysmon.xml   configuración de Sysmon para las reglas
   cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, rules)
 sigma/         las reglas en formato Sigma
