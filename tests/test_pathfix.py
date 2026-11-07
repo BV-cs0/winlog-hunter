@@ -24,6 +24,10 @@ class PathFix(unittest.TestCase):
         self.assertEqual(pathfix.joined("C:\A;", self.folder), f"C:\A;{self.folder}")
         self.assertEqual(pathfix.joined("", self.folder), str(self.folder))
 
+    def test_without_removes_only_that_folder(self):
+        current = rf"C:\A;{self.folder};C:\B"
+        self.assertEqual(pathfix.without(current, str(self.folder).lower()), r"C:\A;C:\B")
+
     def test_never_runs_when_disabled(self):
         os.environ["WINLOG_HUNTER_NO_PATH"] = "1"
         try:

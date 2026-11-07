@@ -1,6 +1,6 @@
 # winlog-hunter
 
-[![PyPI](https://img.shields.io/badge/PyPI-v0.5.1-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.6.0-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
 Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Sysmon** y **PowerShell**, detecta actividad sospechosa con 21 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
@@ -14,7 +14,9 @@ Necesitas Python 3.9 o superior.
 python -m pip install winlog-hunter
 ```
 
-Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`.
+No tiene dependencias obligatorias. En Linux o macOS, para leer ficheros `.evtx` instala también el extra: `python3 -m pip install "winlog-hunter[evtx]"` (en Windows no hace falta: usa `wevtutil`, que viene con el sistema).
+
+Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`. Para comprobar que funciona: `winlog-hunter --version`.
 
 > **¿Windows dice que no reconoce `winlog-hunter`?** Algunas instalaciones de Python no ponen su carpeta `Scripts` en el PATH. Usa `python -m winlog_hunter` (con guion bajo), por ejemplo `python -m winlog_hunter equipo`: funciona igual y, de paso, añade esa carpeta al PATH de tu usuario. Desde la siguiente consola que abras, `winlog-hunter` funcionará directamente.
 
@@ -33,6 +35,24 @@ Exporta los logs de las últimas 24 horas, los analiza y abre el informe en el n
 > Para analizar más tiempo: `winlog-hunter equipo --horas 72`. Todas las opciones: `winlog-hunter equipo --help`.
 
 La primera vez, [prepara el equipo](#preparar-el-equipo-recomendado) para que Windows guarde todos los eventos que usan las reglas.
+
+## Comandos
+
+```powershell
+winlog-hunter -h                # lista de comandos y ejemplos
+winlog-hunter <comando> -h      # todas las opciones de un comando, p. ej. winlog-hunter equipo -h
+```
+
+| Comando | Qué hace | Administrador |
+|---|---|---|
+| `winlog-hunter equipo` | Analiza los logs de este equipo y abre el informe | Recomendado |
+| `winlog-hunter analyze <ficheros>` | Analiza `.evtx`, `.xml` o `.json` exportados de cualquier equipo | No |
+| `winlog-hunter rules` | Lista las 21 reglas de detección | No |
+| `winlog-hunter auditoria --activar` | Activa los eventos de Windows que usan las reglas | Sí |
+| `winlog-hunter sysmon --instalar` | Instala Sysmon con la configuración de winlog-hunter | Sí |
+| `winlog-hunter programar` | Programa el análisis diario del equipo | Sí |
+| `winlog-hunter desinstalar` | Deshace todos los cambios en el equipo | Sí |
+| `winlog-hunter --version` | Muestra la versión instalada | No |
 
 ## Detecciones
 
@@ -174,6 +194,25 @@ Los logs pueden contener datos controlados por un atacante (nombres de usuario, 
 - **XML.** Se rechazan los documentos con `DOCTYPE` (protección frente a XXE y billion laughs).
 - **Markdown.** Se escapan los caracteres especiales.
 
+## Desinstalar
+
+**1. Deshaz los cambios en el equipo** (PowerShell como administrador):
+
+```powershell
+winlog-hunter desinstalar
+```
+
+Elimina la tarea programada, deja la auditoría de Windows como estaba antes de `auditoria --activar`, desinstala Sysmon y quita del PATH la carpeta que añadió winlog-hunter. Solo deshace lo que hizo winlog-hunter: si algo no se había activado, lo indica y lo deja como está.
+
+- `--conservar-sysmon`: no desinstala Sysmon (por ejemplo, si ya lo usabas antes).
+- `--borrar-informes`: borra también los informes de `Documentos\winlog-hunter`, que por defecto se conservan.
+
+**2. Quita el paquete:**
+
+```powershell
+python -m pip uninstall winlog-hunter
+```
+
 ## Estructura
 
 ```text
@@ -181,10 +220,10 @@ src/winlog_hunter/
   parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
   rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
   report.py    informe en consola, HTML, Markdown y JSON
-  local.py     análisis del propio equipo, aviso, tarea programada, auditoría y Sysmon
+  local.py     análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación
   pathfix.py   deja el comando winlog-hunter en el PATH si pip no lo hizo
   data/sysmon.xml   configuración de Sysmon para las reglas
-  cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, rules)
+  cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules)
 sigma/         las reglas en formato Sigma
 docs/          captura del informe
 samples/       datos sintéticos que usan los tests

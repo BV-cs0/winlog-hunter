@@ -14,6 +14,8 @@ import sysconfig
 from pathlib import Path
 
 EXE = "winlog-hunter.exe"
+# Recuerda qué carpeta añadimos, para quitarla al desinstalar.
+MARKER = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "winlog-hunter" / "path-anadido.txt"
 
 
 def _norm(path: str) -> str:
@@ -65,6 +67,27 @@ def joined(current: str, folder: Path) -> str:
     return f"{current.rstrip(os.pathsep)}{os.pathsep}{folder}" if current.strip() else str(folder)
 
 
+def without(current: str, folder: str) -> str:
+    target = _norm(folder)
+    return os.pathsep.join(e for e in current.split(os.pathsep) if e.strip() and _norm(e) != target)
+
+
+def remove_added_folder() -> str | None:
+    """Quita del PATH del usuario la carpeta que añadió winlog-hunter. Devuelve la carpeta o None."""
+    if os.name != "nt" or not MARKER.exists():
+        return None
+    folder = MARKER.read_text(encoding="utf-8").strip()
+    current, kind = _user_path()
+    if on_path(Path(folder), current):
+        _set_user_path(without(current, folder), kind)
+    MARKER.unlink(missing_ok=True)
+    try:
+        MARKER.parent.rmdir()
+    except OSError:
+        pass
+    return folder
+
+
 def ensure_command_available() -> None:
     """Añade la carpeta Scripts al PATH del usuario si hace falta. Nunca interrumpe el programa."""
     try:
@@ -80,6 +103,8 @@ def ensure_command_available() -> None:
         if on_path(folder, current):
             return  # ya añadida: solo falta abrir una consola nueva
         _set_user_path(joined(current, folder), kind)
+        MARKER.parent.mkdir(parents=True, exist_ok=True)
+        MARKER.write_text(str(folder), encoding="utf-8")
         print(
             f"winlog-hunter: he añadido {folder} al PATH de tu usuario.\n"
             "Desde la próxima consola que abras podrás escribir simplemente 'winlog-hunter'.\n",

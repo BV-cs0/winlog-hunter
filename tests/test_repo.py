@@ -19,5 +19,21 @@ class Repository(unittest.TestCase):
         self.assertEqual(badge.group(1), __version__, "actualiza la insignia de PyPI del README")
 
 
+class Help(unittest.TestCase):
+    def test_help_is_in_spanish_and_lists_every_command(self):
+        import contextlib
+        import io
+
+        from winlog_hunter.cli import main
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main([]), 0)
+        text = out.getvalue()
+        self.assertIn("uso: winlog-hunter", text)
+        for command in ("analyze", "rules", "equipo", "programar", "sysmon", "auditoria", "desinstalar"):
+            self.assertIn(command, text)
+
+
 if __name__ == "__main__":
     unittest.main()

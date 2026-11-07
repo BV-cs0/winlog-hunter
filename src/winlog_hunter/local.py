@@ -510,6 +510,50 @@ def audit_status() -> list[tuple[str, bool | None]]:
     return rows
 
 
+# --------------------------------------------------------------------------- #
+# Desinstalación
+# --------------------------------------------------------------------------- #
+
+
+def uninstall_everything(
+    keep_sysmon: bool = False, delete_reports: bool = False, log: Callable[[str], None] = print
+) -> None:
+    """Deshace todo lo que winlog-hunter cambió en el equipo (tarea, auditoría, Sysmon, PATH, datos)."""
+    from . import pathfix
+
+    require_windows()
+    _require_admin("desinstalar winlog-hunter del equipo")
+
+    if task_status():
+        log(f"  {'OK   ' if unschedule() else 'FALLO'} tarea programada '{TASK_NAME}' eliminada")
+    else:
+        log("  -     no había tarea programada")
+
+    if (AUDIT_BACKUP_DIR / "auditpol.csv").exists():
+        audit_restore(log=lambda m: None)
+        log("  OK    auditoría de Windows restaurada a la configuración original")
+    else:
+        log("  -     la auditoría no se había activado con winlog-hunter")
+
+    if keep_sysmon:
+        log("  -     Sysmon se conserva (--conservar-sysmon)")
+    elif sysmon_service():
+        sysmon_uninstall()
+        log("  OK    Sysmon desinstalado")
+    else:
+        log("  -     Sysmon no estaba instalado")
+
+    folder = pathfix.remove_added_folder()
+    log(f"  OK    {folder} quitado del PATH" if folder else "  -     winlog-hunter no había tocado el PATH")
+
+    shutil.rmtree(SYSMON_INSTALL_DIR, ignore_errors=True)
+    if delete_reports:
+        shutil.rmtree(default_output(), ignore_errors=True)
+        log(f"  OK    informes borrados ({default_output()})")
+    else:
+        log(f"  -     los informes se conservan en {default_output()}")
+
+
 def task_status() -> str | None:
     """Estado de la tarea ('Listo', 'En ejecución'...) o None si no existe o no se puede ver."""
     if os.name != "nt":

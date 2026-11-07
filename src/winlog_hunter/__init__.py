@@ -1,3 +1,3 @@
 """winlog-hunter: detección de amenazas en logs de Windows mapeada a MITRE ATT&CK."""
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"

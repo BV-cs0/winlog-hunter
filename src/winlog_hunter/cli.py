@@ -19,14 +19,47 @@ FORMATS = ("console", "json", "markdown", "html")
 _EXTENSION_FORMAT = {".json": "json", ".md": "markdown", ".markdown": "markdown", ".html": "html", ".htm": "html"}
 
 
+EXAMPLES = """ejemplos:
+  winlog-hunter equipo                         analiza este equipo y abre el informe
+  winlog-hunter analyze Security.evtx -o informe.html
+  winlog-hunter auditoria --activar            activa los eventos que usan las reglas (admin)
+  winlog-hunter sysmon --instalar              instala Sysmon (admin)
+  winlog-hunter programar                      análisis diario a las 09:00 (admin)
+  winlog-hunter desinstalar                    deshace todos los cambios (admin)
+
+Ayuda de cada comando: winlog-hunter <comando> -h
+Si Windows no reconoce 'winlog-hunter', usa: python -m winlog_hunter <comando>
+"""
+
+
+class _HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    def add_usage(self, usage, actions, groups, prefix=None):
+        return super().add_usage(usage, actions, groups, prefix or "uso: ")
+
+
+class _Parser(argparse.ArgumentParser):
+    """ArgumentParser con la ayuda en español."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", _HelpFormatter)
+        kwargs["add_help"] = False
+        super().__init__(*args, **kwargs)
+        self._optionals.title = "opciones"
+        self._positionals.title = "argumentos"
+        self.add_argument("-h", "--help", action="help", help="muestra esta ayuda y sale")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="winlog-hunter",
         description="Analiza logs de Windows (Security, System, Sysmon, PowerShell) y detecta actividad "
         "sospechosa mapeada a MITRE ATT&CK.",
+        epilog=EXAMPLES,
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}",
+                        help="muestra la versión y sale")
+    sub = parser.add_subparsers(dest="command", required=True, title="comandos", metavar="<comando>",
+                                parser_class=_Parser, prog="winlog-hunter")
 
     analyze = sub.add_parser("analyze", help="analiza ficheros o carpetas de logs")
     analyze.add_argument("paths", nargs="+", type=Path, help=".evtx, .xml (wevtutil), .jsonl/.json o carpetas")
@@ -97,7 +130,28 @@ def build_parser() -> argparse.ArgumentParser:
     audit_action.add_argument("--activar", action="store_true", help="activa la auditoría")
     audit_action.add_argument("--restaurar", action="store_true", help="vuelve a la configuración original")
     audit_action.add_argument("--estado", action="store_true", help="muestra qué está activado")
+
+    remove = sub.add_parser(
+        "desinstalar",
+        help="deshace todos los cambios en el equipo antes de 'pip uninstall' (Windows, como administrador)",
+        description="Elimina la tarea programada, restaura la auditoría de Windows, desinstala Sysmon y quita "
+        "del PATH lo que añadió winlog-hunter. Después solo queda: python -m pip uninstall winlog-hunter",
+    )
+    remove.add_argument("--conservar-sysmon", action="store_true", help="no desinstala Sysmon")
+    remove.add_argument("--borrar-informes", action="store_true", help="borra también Documentos\\winlog-hunter")
     return parser
+
+
+def _uninstall(args: argparse.Namespace) -> int:
+    from . import local
+
+    try:
+        local.uninstall_everything(keep_sysmon=args.conservar_sysmon, delete_reports=args.borrar_informes)
+    except local.LocalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print("\nListo. Para terminar, quita el paquete con:  python -m pip uninstall winlog-hunter")
+    return 0
 
 
 def _audit(args: argparse.Namespace) -> int:
@@ -314,7 +368,11 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    if not (sys.argv[1:] if argv is None else argv):
+        parser.print_help()
+        return 0
+    args = parser.parse_args(argv)
     if args.command == "rules":
         return _list_rules()
     if args.command == "equipo":
@@ -325,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
         return _sysmon(args)
     if args.command == "auditoria":
         return _audit(args)
+    if args.command == "desinstalar":
+        return _uninstall(args)
     return _analyze(args)
 
 
