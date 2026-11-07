@@ -115,7 +115,7 @@ El analizador detecta las 12 técnicas sin falsos positivos de severidad media o
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions ejecuta la batería en Linux y Windows con Python 3.9 y 3.12.
+GitHub Actions ejecuta la batería en Linux y Windows con Python 3.10 y 3.12.
 
 ## Estructura
 
