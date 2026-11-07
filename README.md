@@ -16,6 +16,13 @@ python -m pip install winlog-hunter
 
 Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`.
 
+> **¿Windows dice que no reconoce `winlog-hunter`?** Pasa cuando la carpeta `Scripts` de Python no está en el PATH (pip lo avisa al instalar). Puedes usar siempre `python -m winlog_hunter` en su lugar, por ejemplo `python -m winlog_hunter equipo`, o añadir esa carpeta al PATH de tu usuario y abrir una consola nueva:
+>
+> ```powershell
+> $scripts = python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+> [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ";$scripts", 'User')
+> ```
+
 ## Uso
 
 **1. Abre PowerShell como administrador** (sin administrador funciona, pero se omite el log Security).
