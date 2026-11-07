@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "winlog-hunter"
+version = "0.1.0"
+description = "Detección de amenazas en logs de Windows (Security, System, Sysmon) mapeada a MITRE ATT&CK"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Bryan Valenzuela" }]
+keywords = ["blue-team", "soc", "dfir", "windows", "sysmon", "mitre-attack", "threat-hunting"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Environment :: Console",
+]
+dependencies = []
+
+[project.optional-dependencies]
+evtx = ["python-evtx>=0.7"]
+
+[project.scripts]
+winlog-hunter = "winlog_hunter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
