@@ -69,5 +69,30 @@ class ScheduledTask(unittest.TestCase):
         self.assertEqual(root.find("t:Settings/t:StartWhenAvailable", NS).text, "true")
 
 
+class SysmonConfig(unittest.TestCase):
+    def setUp(self):
+        self.root = ET.parse(local.SYSMON_CONFIG).getroot()
+
+    def test_is_valid_sysmon_config(self):
+        self.assertEqual(self.root.tag, "Sysmon")
+        self.assertTrue(self.root.get("schemaversion"))
+        self.assertIsNotNone(self.root.find("EventFiltering"))
+
+    def test_logs_what_the_rules_need(self):
+        def rules(tag, onmatch):
+            return [e for e in self.root.iter(tag) if e.get("onmatch") == onmatch]
+
+        self.assertTrue(rules("ProcessCreate", "exclude"))  # todos los procesos menos el ruido
+        self.assertTrue(rules("WmiEvent", "exclude"))  # todo WMI
+        lsass = [t.text for e in rules("ProcessAccess", "include") for t in e.iter("TargetImage")]
+        self.assertIn(r"C:\Windows\system32\lsass.exe", lsass)
+        keys = " ".join(t.text for e in rules("RegistryEvent", "include") for t in e.iter("TargetObject"))
+        for key in (r"\CurrentVersion\Run", r"\Image File Execution Options", r"\Winlogon\Shell", r"\Control\Lsa"):
+            self.assertIn(key, keys)
+
+    def test_config_is_shipped_with_the_package(self):
+        self.assertTrue(local.SYSMON_CONFIG.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

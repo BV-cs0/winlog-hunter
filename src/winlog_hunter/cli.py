@@ -72,7 +72,48 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--ahora", action="store_true", help="lanza la tarea ya, sin esperar")
     group.add_argument("--quitar", action="store_true", help="elimina la tarea")
     group.add_argument("--estado", action="store_true", help="muestra si la tarea existe")
+
+    sysmon = sub.add_parser(
+        "sysmon",
+        help="instala o actualiza Sysmon con la configuración de winlog-hunter (Windows, como administrador)",
+        description="Descarga Sysmon de la web oficial de Microsoft, comprueba su firma y lo instala con una "
+        "configuración pensada para las reglas de winlog-hunter. Al instalarlo se acepta la licencia de Sysinternals.",
+    )
+    action = sysmon.add_mutually_exclusive_group(required=True)
+    action.add_argument("--instalar", action="store_true", help="descarga e instala Sysmon")
+    action.add_argument("--actualizar", action="store_true", help="aplica la configuración a un Sysmon ya instalado")
+    action.add_argument("--desinstalar", action="store_true", help="desinstala Sysmon")
+    action.add_argument("--estado", action="store_true", help="muestra si Sysmon está instalado")
+    action.add_argument("--config", action="store_true", help="muestra la ruta de la configuración incluida")
     return parser
+
+
+def _sysmon(args: argparse.Namespace) -> int:
+    from . import local
+
+    try:
+        if args.config:
+            print(local.SYSMON_CONFIG)
+            return 0
+        local.require_windows()
+        if args.estado:
+            service = local.sysmon_service()
+            print(f"Sysmon instalado (servicio {service})." if service else "Sysmon no está instalado.")
+            return 0 if service else 1
+        if args.instalar:
+            local.sysmon_install()
+            print("Sysmon instalado. Los eventos nuevos van al registro Microsoft-Windows-Sysmon/Operational.")
+            print("Pruébalo con:  winlog-hunter equipo")
+        elif args.actualizar:
+            local.sysmon_update()
+            print("Configuración de Sysmon actualizada.")
+        else:
+            local.sysmon_uninstall()
+            print("Sysmon desinstalado.")
+    except local.LocalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def _local(args: argparse.Namespace) -> int:
@@ -243,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         return _local(args)
     if args.command == "programar":
         return _schedule(args)
+    if args.command == "sysmon":
+        return _sysmon(args)
     return _analyze(args)
 
 

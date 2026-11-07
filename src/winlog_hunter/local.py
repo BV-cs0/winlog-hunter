@@ -286,6 +286,96 @@ def run_now() -> None:
         raise LocalError("la tarea no existe; créala con: winlog-hunter programar")
 
 
+# --------------------------------------------------------------------------- #
+# Sysmon
+# --------------------------------------------------------------------------- #
+
+SYSMON_URL = "https://download.sysinternals.com/files/Sysmon.zip"
+SYSMON_CONFIG = Path(__file__).with_name("data") / "sysmon.xml"
+SYSMON_INSTALL_DIR = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "winlog-hunter"
+_MICROSOFT_SIGNERS = ("O=Microsoft Corporation",)
+
+
+def sysmon_service() -> str | None:
+    """Nombre del servicio de Sysmon instalado ('Sysmon64' o 'Sysmon'), o None."""
+    for name in ("Sysmon64", "Sysmon"):
+        if _run(["sc.exe", "query", name]).returncode == 0:
+            return name
+    return None
+
+
+def _verify_microsoft_signature(exe: Path) -> None:
+    script = (
+        f"$s = Get-AuthenticodeSignature -LiteralPath '{exe}'; "
+        "Write-Output $s.Status; Write-Output $s.SignerCertificate.Subject"
+    )
+    proc = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
+    lines = proc.stdout.strip().splitlines()
+    if len(lines) < 2 or lines[0].strip() != "Valid" or not any(s in lines[1] for s in _MICROSOFT_SIGNERS):
+        raise LocalError(f"la firma de {exe.name} no es una firma válida de Microsoft: {' | '.join(lines)}")
+
+
+def _download_sysmon(folder: Path) -> Path:
+    import urllib.request
+    import zipfile
+
+    archive = folder / "Sysmon.zip"
+    try:
+        with urllib.request.urlopen(SYSMON_URL, timeout=120) as response, archive.open("wb") as fh:
+            shutil.copyfileobj(response, fh)
+    except OSError as exc:
+        raise LocalError(f"no se pudo descargar Sysmon de {SYSMON_URL}: {exc}") from exc
+    with zipfile.ZipFile(archive) as zf:
+        zf.extract("Sysmon64.exe", folder)
+    exe = folder / "Sysmon64.exe"
+    _verify_microsoft_signature(exe)
+    return exe
+
+
+def sysmon_install(config: Path = SYSMON_CONFIG, log: Callable[[str], None] = print) -> None:
+    """Descarga Sysmon de Microsoft, comprueba su firma y lo instala con la configuración dada."""
+    require_windows()
+    _require_admin("instalar Sysmon")
+    if sysmon_service():
+        raise LocalError("Sysmon ya está instalado; para aplicar la configuración usa: winlog-hunter sysmon --actualizar")
+    SYSMON_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    target_config = SYSMON_INSTALL_DIR / "sysmon.xml"
+    shutil.copyfile(config, target_config)
+    with tempfile.TemporaryDirectory() as tmp:
+        log(f"Descargando Sysmon de {SYSMON_URL}...")
+        exe = _download_sysmon(Path(tmp))
+        log("Firma de Microsoft verificada. Instalando...")
+        proc = _run([str(exe), "-accepteula", "-i", str(target_config)])
+    if proc.returncode != 0 or not sysmon_service():
+        raise LocalError("Sysmon no se pudo instalar:\n" + (proc.stdout + proc.stderr).strip())
+
+
+def sysmon_update(config: Path = SYSMON_CONFIG) -> None:
+    """Aplica la configuración de winlog-hunter a un Sysmon ya instalado."""
+    require_windows()
+    _require_admin("actualizar la configuración de Sysmon")
+    service = sysmon_service()
+    if not service:
+        raise LocalError("Sysmon no está instalado; instálalo con: winlog-hunter sysmon --instalar")
+    SYSMON_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    target_config = SYSMON_INSTALL_DIR / "sysmon.xml"
+    shutil.copyfile(config, target_config)
+    proc = _run([f"{service}.exe", "-c", str(target_config)])
+    if proc.returncode != 0:
+        raise LocalError("no se pudo aplicar la configuración:\n" + (proc.stdout + proc.stderr).strip())
+
+
+def sysmon_uninstall() -> None:
+    require_windows()
+    _require_admin("desinstalar Sysmon")
+    service = sysmon_service()
+    if not service:
+        raise LocalError("Sysmon no está instalado")
+    proc = _run([f"{service}.exe", "-u"])
+    if proc.returncode != 0 or sysmon_service():
+        raise LocalError("no se pudo desinstalar Sysmon:\n" + (proc.stdout + proc.stderr).strip())
+
+
 def task_status() -> str | None:
     """Estado de la tarea ('Listo', 'En ejecución'...) o None si no existe o no se puede ver."""
     if os.name != "nt":

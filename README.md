@@ -85,13 +85,15 @@ Los puntos débiles son claros: la **escalada de privilegios** (bypass de UAC, t
 Sin Sysmon, Windows no registra los procesos que se ejecutan, los accesos a LSASS ni los cambios en el registro, así que 9 de las 21 reglas no tienen datos. Sysmon es gratuito y de Microsoft. En PowerShell como administrador:
 
 ```powershell
-# 1. Descargar Sysmon y una configuración probada (la de SwiftOnSecurity)
-Invoke-WebRequest https://download.sysinternals.com/files/Sysmon.zip -OutFile $env:TEMP\Sysmon.zip
-Expand-Archive $env:TEMP\Sysmon.zip $env:TEMP\Sysmon -Force
-Invoke-WebRequest https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml -OutFile $env:TEMP\sysmon.xml
+winlog-hunter sysmon --instalar
+```
 
-# 2. Instalarlo
-& $env:TEMP\Sysmon\Sysmon64.exe -accepteula -i $env:TEMP\sysmon.xml
+Descarga Sysmon de la web oficial de Microsoft, comprueba que está firmado por Microsoft y lo instala con una [configuración pensada para winlog-hunter](src/winlog_hunter/data/sysmon.xml). Esa configuración registra los procesos, los accesos a LSASS, los cambios en claves de persistencia y WMI, y filtra el ruido para que el log ocupe poco. Al instalarlo se acepta la [licencia de Sysinternals](https://learn.microsoft.com/sysinternals/license-terms).
+
+```powershell
+winlog-hunter sysmon --estado        # comprobar que está instalado
+winlog-hunter sysmon --actualizar    # aplicar la configuración de una versión nueva de winlog-hunter
+winlog-hunter sysmon --desinstalar   # quitarlo
 ```
 
 Para la regla WLH-021, activa también el registro de bloques de script de PowerShell:
@@ -163,8 +165,9 @@ src/winlog_hunter/
   parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
   rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
   report.py    informe en consola, HTML, Markdown y JSON
-  local.py     análisis del propio equipo, aviso en pantalla y tarea programada
-  cli.py       comando winlog-hunter (analyze, equipo, programar, rules)
+  local.py     análisis del propio equipo, aviso, tarea programada y Sysmon
+  data/sysmon.xml   configuración de Sysmon para las reglas
+  cli.py       comando winlog-hunter (analyze, equipo, programar, sysmon, rules)
 sigma/         las reglas en formato Sigma
 docs/          captura del informe
 samples/       datos sintéticos que usan los tests

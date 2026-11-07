@@ -1,0 +1,136 @@
+<!--
+  Configuración de Sysmon para winlog-hunter.
+
+  Registra lo que usan las reglas de winlog-hunter y filtra el ruido para que el log
+  ocupe poco en un equipo normal:
+
+    1      Procesos creados (todos, salvo ruido conocido)        WLH-010, 011, 012, 014, 018
+    3      Conexiones de red de intérpretes, LOLBins y Office    contexto para el analista
+    8      Hilos remotos (inyección de código)                   contexto para el analista
+    10     Accesos a la memoria de LSASS                         WLH-013
+    12-14  Cambios en claves de arranque y persistencia          WLH-019
+    19-21  Suscripciones de eventos WMI                          WLH-020
+
+  Se instala con "winlog-hunter sysmon" y la opción instalar (o actualizar si ya está).
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation>False</CheckRevocation>
+  <EventFiltering>
+
+    <!-- 1: creación de procesos -->
+    <RuleGroup name="Procesos" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\conhost.exe</Image>
+        <Image condition="end with">\Sysmon64.exe</Image>
+        <Image condition="end with">\Sysmon.exe</Image>
+        <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
+        <Image condition="is">C:\Windows\System32\WUDFHost.exe</Image>
+        <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- 3: conexiones de red, solo de procesos que suelen usar los atacantes -->
+    <RuleGroup name="Red" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <Image condition="end with">\powershell.exe</Image>
+        <Image condition="end with">\pwsh.exe</Image>
+        <Image condition="end with">\cmd.exe</Image>
+        <Image condition="end with">\mshta.exe</Image>
+        <Image condition="end with">\rundll32.exe</Image>
+        <Image condition="end with">\regsvr32.exe</Image>
+        <Image condition="end with">\certutil.exe</Image>
+        <Image condition="end with">\bitsadmin.exe</Image>
+        <Image condition="end with">\wscript.exe</Image>
+        <Image condition="end with">\cscript.exe</Image>
+        <Image condition="end with">\msbuild.exe</Image>
+        <Image condition="end with">\installutil.exe</Image>
+        <Image condition="end with">\WINWORD.EXE</Image>
+        <Image condition="end with">\EXCEL.EXE</Image>
+        <Image condition="end with">\POWERPNT.EXE</Image>
+        <Image condition="begin with">C:\Users\Public\</Image>
+        <Image condition="contains">\AppData\Local\Temp\</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- 8: hilos remotos -->
+    <RuleGroup name="Inyeccion" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\winlogon.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\services.exe</SourceImage>
+        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- 10: accesos a LSASS -->
+    <RuleGroup name="LSASS" groupRelation="and">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
+        <GrantedAccess condition="excludes any">0x1000;0x1400;0x100000;0x101000</GrantedAccess>
+      </ProcessAccess>
+    </RuleGroup>
+    <RuleGroup name="LSASS legítimo" groupRelation="or">
+      <ProcessAccess onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\system32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\system32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\system32\services.exe</SourceImage>
+        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- 12, 13, 14: registro, solo claves de arranque y persistencia -->
+    <RuleGroup name="Persistencia" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\Policies\Explorer\Run</TargetObject>
+        <TargetObject condition="contains">\Winlogon\Shell</TargetObject>
+        <TargetObject condition="contains">\Winlogon\Userinit</TargetObject>
+        <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+        <TargetObject condition="contains">\SilentProcessExit\</TargetObject>
+        <TargetObject condition="end with">\Windows\AppInit_DLLs</TargetObject>
+        <TargetObject condition="contains">\Shell Folders\</TargetObject>
+        <TargetObject condition="contains">\Session Manager\BootExecute</TargetObject>
+        <TargetObject condition="contains">\Control\Lsa\</TargetObject>
+        <TargetObject condition="contains">\Microsoft\NetSh\</TargetObject>
+        <TargetObject condition="contains">\InprocServer32\</TargetObject>
+        <TargetObject condition="contains">\LocalServer32\</TargetObject>
+        <TargetObject condition="contains">\TreatAs\</TargetObject>
+        <TargetObject condition="begin with">HKLM\SAM\SAM\Domains\Account\Users\</TargetObject>
+        <TargetObject condition="end with">\ImagePath</TargetObject>
+        <TargetObject condition="end with">\ServiceDll</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- 19, 20, 21: WMI -->
+    <RuleGroup name="WMI" groupRelation="or">
+      <WmiEvent onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- Desactivados: mucho volumen y winlog-hunter aún no los usa -->
+    <RuleGroup name="Desactivados" groupRelation="or">
+      <FileCreateTime onmatch="include" />
+      <ProcessTerminate onmatch="include" />
+      <DriverLoad onmatch="include" />
+      <ImageLoad onmatch="include" />
+      <RawAccessRead onmatch="include" />
+      <FileCreate onmatch="include" />
+      <FileCreateStreamHash onmatch="include" />
+      <PipeEvent onmatch="include" />
+      <DnsQuery onmatch="include" />
+      <FileDelete onmatch="include" />
+      <ClipboardChange onmatch="include" />
+      <ProcessTampering onmatch="include" />
+      <FileDeleteDetected onmatch="include" />
+      <FileBlockExecutable onmatch="include" />
+      <FileBlockShredding onmatch="include" />
+      <FileExecutableDetected onmatch="include" />
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
