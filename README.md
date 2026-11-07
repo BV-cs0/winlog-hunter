@@ -70,6 +70,8 @@ También funciona sin instalar: `python -m winlog_hunter ...` desde `src/`.
 
 ## Uso
 
+Los ejemplos con `samples/` se ejecutan desde la carpeta del repositorio (`cd winlog-hunter`). `logs/` y `Security.evtx` representan tus propios ficheros: cámbialos por la ruta donde los tengas.
+
 ```bash
 # Prueba con el escenario de ataque incluido
 winlog-hunter analyze samples/escenario_ataque.jsonl
