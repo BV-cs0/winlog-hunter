@@ -1,0 +1,42 @@
+title: 'Carga de DLL sospechosa o sideloading'
+id: 44a589de-748b-4565-8364-93fc36260027
+status: experimental
+description: 'DLL explícitamente sin firma fuera de Windows y Program Files cargada por un ejecutable del sistema o una pareja de secuestro conocida. Signed se refiere a la DLL, no a la firma del cargador.'
+references:
+    - https://attack.mitre.org/techniques/T1574/001/
+    - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.persistence
+    - attack.t1574.001
+    - attack.t1574.002
+logsource:
+    product: windows
+    category: image_load
+detection:
+    selection_unsigned:
+        Signed: 'false'
+        ImageLoaded|endswith: '.dll'
+    selection_system_loader:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    selection_word:
+        Image|endswith: '\winword.exe'
+        ImageLoaded|endswith: '\wwlib.dll'
+    selection_service:
+        Image|endswith: '\svchost.exe'
+        ImageLoaded|endswith:
+            - '\cdpsshims.dll'
+            - '\wlbsctrl.dll'
+    filter_dll:
+        ImageLoaded|re: '(?i)^[a-z]:\\(windows\\(system32|syswow64|winsxs)\\|program files( \(x86\))?\\)'
+    condition: selection_unsigned and (selection_system_loader or selection_word or selection_service) and not filter_dll
+fields:
+    - Image
+    - ImageLoaded
+    - Signed
+falsepositives:
+    - Extensiones de shell o complementos legítimos sin firma instalados por usuario
+    - Word portable con sus bibliotecas; requiere revisión antes de atribuir un ataque
+level: medium
+# winlog-hunter: WLH-027

@@ -1,9 +1,10 @@
 title: 'Persistencia en el registro'
 id: 5aa3e93b-6386-5181-bce5-fb8cfb0ca918
 status: experimental
-description: 'Sysmon 13: escritura en claves de arranque (Run, Winlogon, IFEO, SilentProcessExit, AppInit, LSA, COM del usuario, SAM) desde un proceso que no es un instalador.'
+description: 'Claves de arranque, compatibilidad, proveedores de red, monitores de impresión, ServiceDll y scripts GPO. Las ampliaciones ambiguas son bajas en el motor; DLL o scripts en perfiles son medios. AccessVBOM pertenece a WLH-029. También hijos no habituales de smss fuera del sistema.'
 references:
     - https://github.com/BV-cs0/winlog-hunter
+    - https://attack.mitre.org/techniques/T1574/011/
 author: Bryan Valenzuela
 date: 2026-11-07
 tags:
@@ -15,9 +16,15 @@ tags:
     - attack.t1546.010
     - attack.t1546.015
     - attack.t1547.005
+    - attack.t1546.011
+    - attack.t1574.011
+    - attack.t1556.008
+    - attack.t1547.010
+    - attack.t1543.003
+    - attack.t1037
 logsource:
     product: windows
-    category: registry_set
+    service: sysmon
 detection:
     selection:
         TargetObject|contains:
@@ -47,7 +54,36 @@ detection:
             - '\TrustedInstaller.exe'
             - '\TiWorker.exe'
             - '\services.exe'
-    condition: selection and not 1 of filter_*
+    filter_boot_default:
+        TargetObject|endswith: '\Session Manager\BootExecute'
+        Details: 'autocheck autochk *'
+    selection_extra:
+        EventID: 13
+        Details|re: '.+'
+        TargetObject|re: '(?i)\\(appcompatflags\\(custom|installedsdb)\\|winsock2\\parameters\\protocol_catalog9\\|control\\networkprovider\\order\\providerorder$|services\\lanmanserver\\parameters\\nullsessionpipes$|control\\print\\monitors\\[^\\]+\\driver$|services\\[^\\]+\\parameters\\servicedll$|group policy\\(state\\(machine|[^\\]+)\\)?scripts\\(startup|shutdown|logon|logoff)\\.*\\(script|parameters)$)'
+    filter_extra_writer:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*(svchost|spoolsv|services|msiexec|trustedinstaller|tiworker|setuphost|dismhost)\.exe$|^[a-z]:\\windows\\servicing\\trustedinstaller\.exe$|^[a-z]:\\program files( \(x86\))?\\(common files\\microsoft shared\\clicktorun\\officeclicktorun\.exe|microsoft onedrive\\([^\\]+\\)?onedrivesetup\.exe|google\\(update|googleupdater)\\.*(googleupdate|updater)\.exe)$'
+    filter_extra_module:
+        TargetObject|re: '(?i)\\(services\\[^\\]+\\parameters\\servicedll|control\\print\\monitors\\[^\\]+\\driver)$'
+        Details|re: '(?i)^"?([a-z]:\\(windows\\(system32|syswow64|winsxs)\\|program files( \(x86\))?\\)|(%systemroot%|%windir%)\\(system32|syswow64|winsxs)\\|%programfiles(\(x86\))?%\\)'
+    filter_extra_network:
+        TargetObject|endswith: '\Control\NetworkProvider\Order\ProviderOrder'
+        Details|re: '(?i)^\s*(rdpnp|lanmanworkstation|webclient)(\s*,\s*(rdpnp|lanmanworkstation|webclient))*\s*$'
+    selection_smss:
+        EventID: 1
+        ParentImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*smss\.exe$'
+        Image|contains: '\'
+    selection_pending_gpo:
+        EventID: 13
+        TargetObject|re: '(?i)\\microsoft\\ieak\\grouppolicy\\pendinggpos\\path\d+$'
+        Details|re: '.+'
+    filter_user_update:
+        Image|re: '(?i)^[a-z]:\\users\\[^\\]+\\appdata\\local\\microsoft\\(onedrive\\([^\\]+\\)?onedrive(setup)?\.exe|teams\\update\.exe)$'
+    filter_smss_system:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    filter_smss_shell:
+        Image|re: '(?i)\\(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|schtasks|wmic)\.exe$'
+    condition: (selection and not filter_ifeo_other and not filter_installers and not filter_boot_default) or ((selection_extra or selection_pending_gpo) and not filter_extra_writer and not filter_extra_module and not filter_extra_network and not filter_user_update) or (selection_smss and not filter_smss_system and not filter_smss_shell)
 fields:
     - Image
     - TargetObject

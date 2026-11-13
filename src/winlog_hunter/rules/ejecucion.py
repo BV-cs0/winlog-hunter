@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .base import _browser_root, _bursts, _debugger_process, _is_sysmon, _program_files_path, _user_path, _windows_path
+
 from .base import (Config, ENCODED, Event, Hit, Iterator, UNKNOWN, _LOLBINS, _OFFICE, _POWERSHELL, _PS_INDICATORS, _SCRIPT_BLOCK_INDICATORS, _SHELLS, _exe, _processes, _truncate, decode_powershell, rule)
 
 
@@ -190,5 +192,109 @@ def malicious_script_block(events: list[Event], cfg: Config) -> Iterator[Hit]:
             mitre=sorted({"T1059.001", *(m for _, m in found)}),
             severity="critical" if any(m.startswith("T1003") for _, m in found) else None,
         )
+
+
+def _routine_thread_source(source: str, target: str) -> bool:
+    """Orígenes habituales de hilos remotos; las excepciones requieren su ruta habitual."""
+    name = _exe(source)
+    if source.lower() == "system":
+        return True
+    if _windows_path(source) and name in {"csrss.exe", "wininit.exe", "sysmon.exe", "sysmon64.exe", "sysmon64a.exe"}:
+        return True
+    if _windows_path(source) and name == "svchost.exe" and _windows_path(target):
+        return True
+    if re.fullmatch(r"[a-z]:\\windows\\sysmon(?:64a?|)\.exe", source, re.I):
+        return True
+    if _debugger_process(source):
+        return True
+    browser = _browser_root(source)
+    if browser and browser == _browser_root(target):
+        return True
+    # Defender actualiza su motor tanto en Program Files como en ProgramData.
+    if name in {"msmpeng.exe", "mssense.exe"} and re.match(
+        r"^[a-z]:\\(?:program files\\windows defender(?: advanced threat protection)?\\|"
+        r"programdata\\microsoft\\windows defender\\platform\\)", source, re.I):
+        return True
+    return bool(re.match(r"^[a-z]:\\program files(?: \(x86\))?\\(?:"
+                         r"eset\\.*\\(?:ekrn|eavp)\.exe|sophos\\.*\\(?:sophoshealth|sophosinterceptx|savservice)\.exe|"
+                         r"sysmon\\sysmon(?:64a?|)\.exe)$", source, re.I))
+
+
+@rule("WLH-026", "Posible inyección de código", "high", ["T1055"],
+      "Sysmon 8/10/25: hilos remotos, acceso con escritura y creación de hilos, pila sin módulo o manipulación de imagen.")
+def code_injection(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[tuple[str, str, str, str, str], list[Event]] = {}
+    for e in events:
+        if not _is_sysmon(e) or e.event_id not in (8, 10, 25):
+            continue
+        source, target = e.get("SourceImage", "Image"), e.get("TargetImage")
+        reason, severity = "", "high"
+        if e.event_id == 25:
+            reason = "Sysmon notificó manipulación de la imagen del proceso"
+        elif e.event_id == 8:
+            if not source or not target or _routine_thread_source(source, target):
+                continue
+            reason = "creación de un hilo en otro proceso"
+            severity = "high" if _user_path(source) else "medium"
+        else:
+            # WLH-013 conserva la responsabilidad sobre el acceso a LSASS.
+            if _exe(target) == "lsass.exe" or not source or not target or _routine_thread_source(source, target):
+                continue
+            source_guid, target_guid = e.get("SourceProcessGUID", "SourceProcessGuid"), e.get("TargetProcessGUID", "TargetProcessGuid")
+            if source_guid and source_guid.lower() == target_guid.lower():
+                continue
+            try:
+                mask = int(e.get("GrantedAccess"), 16)
+            except ValueError:
+                mask = 0
+            if (mask and mask & 0x2A == 0 and re.fullmatch(r"[a-z]:\\windows\\(?:syswow64\\)?explorer\.exe", source, re.I)):
+                # Explorer consulta procesos de aplicaciones normales; UNKNOWN no demuestra inyección.
+                continue
+            if re.search(r"\bUNKNOWN(?:\(|\+|\b)", e.get("CallTrace"), re.I):
+                reason = "acceso desde memoria sin módulo en la pila"
+                # Las pilas de JIT también pueden contener UNKNOWN al consultar procesos.
+                severity = "low" if mask and mask & 0x2A == 0 else "high"
+            else:
+                # PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE.
+                # 0x0800 solo es PROCESS_SUSPEND_RESUME: no basta para esta señal.
+                if mask & 0x2A != 0x2A or not _user_path(source):
+                    continue
+                reason, severity = "acceso con escritura de memoria y creación de hilos desde un perfil o temporal", "medium"
+        groups.setdefault((e.computer.lower(), source, target, reason, severity), []).append(e)
+    for (_, source, target, reason, severity), evs in groups.items():
+        for burst in _bursts(evs, cfg.window, 1):
+            first = burst[0]
+            yield Hit(burst, f"{reason.capitalize()} en {first.computer or UNKNOWN}",
+                      {"indicador": reason, "proceso_origen": source, "proceso_destino": target,
+                       "permisos": sorted({x.get("GrantedAccess") for x in burst if x.get("GrantedAccess")}),
+                       "pila": _truncate(first.get("CallTrace")),
+                       "tipo": first.get("Type"), "dirección_del_hilo": first.get("StartAddress")}, severity=severity)
+
+
+_HIJACK_DLLS = {"wwlib.dll", "version.dll", "dbghelp.dll", "cdpsshims.dll", "wlbsctrl.dll"}
+_DLL_LOADER_PAIRS = {("winword.exe", "wwlib.dll"), ("svchost.exe", "cdpsshims.dll"),
+                     ("svchost.exe", "wlbsctrl.dll")}
+
+
+@rule("WLH-027", "Carga de DLL sospechosa o sideloading", "medium", ["T1574.001", "T1574.002"],
+      "Sysmon 7: DLL explícitamente sin firma fuera de Windows y Program Files, con cargador de sistema o pareja conocida.")
+def suspicious_dll(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.event_id != 7 or not _is_sysmon(e) or e.get("Signed").lower() != "false":
+            continue
+        image, dll = e.get("Image"), e.get("ImageLoaded")
+        if not image or not dll or not dll.lower().endswith(".dll"):
+            continue
+        if _windows_path(dll) or _program_files_path(dll) or _debugger_process(image):
+            continue
+        name = _exe(dll)
+        known_pair = (_exe(image), name) in _DLL_LOADER_PAIRS
+        if not _windows_path(image) and not known_pair:
+            # version/dbghelp junto a una aplicación portable no prueba un secuestro.
+            continue
+        label = "DLL de secuestro conocido sin firma" if name in _HIJACK_DLLS else "DLL sin firma fuera de las carpetas de instalación"
+        yield Hit([e], f"{_exe(image)} cargó {label} en {e.computer or UNKNOWN}",
+                  {"proceso": image, "dll": dll, "firma_de_la_dll": e.get("Signed"), "indicador": label},
+                  severity="high" if known_pair else "medium")
 
 

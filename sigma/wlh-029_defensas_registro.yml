@@ -1,0 +1,71 @@
+title: 'Desactivación de defensas en el registro'
+id: ffe8d139-88f7-4333-a302-acfb54290029
+status: experimental
+description: 'Valores peligrosos explícitos y borrado de políticas. Las exclusiones Defender, RDP, AccessVBOM, PortProxy, MRU y ExecutionPolicy son bajos por su uso administrativo normal. Las escrituras de mantenimiento del sistema y Defender se excluyen.'
+references:
+    - https://attack.mitre.org/techniques/T1562/001/
+    - https://attack.mitre.org/techniques/T1112/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.defense_evasion
+    - attack.t1562.001
+    - attack.t1112
+logsource:
+    product: windows
+    service: sysmon
+detection:
+    selection_set:
+        EventID: 13
+    selection_zero:
+        TargetObject|re: '(?i)\\(policies\\system\\enablelua|powershell\\scriptblocklogging\\enablescriptblocklogging|control\\lsa\\runasppl|(session manager\\)?environment\\__pslockdownpolicy|control\\terminal server\\fdenytsconnections|(services\\sharedaccess\\parameters\\firewallpolicy|software\\policies\\microsoft\\windowsfirewall)\\(domainprofile|standardprofile|publicprofile)\\enablefirewall)$'
+        Details|re: '(?i)^((dword|qword)\s*\(\s*)?(0x0+|0)\s*\)?$'
+    selection_one:
+        TargetObject|re: '(?i)\\(windows defender\\(real-time protection\\)?(disableantispyware|disablerealtimemonitoring|disablebehaviormonitoring)|securityproviders\\wdigest\\uselogoncredential|software\\(policies\\)?microsoft\\office\\\d+\.\d+\\(word|excel|powerpoint|access)\\security\\accessvbom)$'
+        Details|re: '(?i)^((dword|qword)\s*\(\s*)?(0x0*1|1)\s*\)?$'
+    selection_policy:
+        TargetObject|endswith: '\PowerShell\1\ShellIds\Microsoft.PowerShell\ExecutionPolicy'
+        Details:
+            - Bypass
+            - Unrestricted
+    selection_exclusion:
+        TargetObject|re: '(?i)\\windows defender\\exclusions\\(paths|processes|extensions)\\[^\\].*$'
+        Details|re: '.+'
+    selection_proxy:
+        TargetObject|re: '(?i)\\services\\portproxy\\(v4tov4|v4tov6|v6tov4|v6tov6)\\tcp\\'
+        Details|re: '.+'
+    selection_rdp_port:
+        TargetObject|endswith: '\Control\Terminal Server\WinStations\RDP-Tcp\PortNumber'
+        Details|re: '(?i)^((dword|qword)\s*\(\s*)?(0x[0-9a-f]+|\d+)\s*\)?$'
+    filter_rdp_default:
+        Details|re: '(?i)^((dword|qword)\s*\(\s*)?(0x0*d3d|3389)\s*\)?$'
+    selection_delete:
+        EventID: 12
+        EventType:
+            - DeleteKey
+            - DeleteValue
+    selection_removed_policy:
+        TargetObject|re: '(?i)\\powershell\\scriptblocklogging(\\enablescriptblocklogging)?$|\\environment\\__pslockdownpolicy$'
+    selection_mru:
+        TargetObject|re: '(?i)\\explorer\\(runmru|recentdocs|comdlg32\\(opensavepidlmru|lastvisitedpidlmru))(\\|$)'
+    filter_explorer:
+        Image|re: '(?i)^[a-z]:\\windows\\(syswow64\\)?explorer\.exe$'
+    filter_system:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*(svchost|securityhealthservice|msiexec|trustedinstaller|tiworker|setuphost|dismhost)\.exe$|^[a-z]:\\windows\\servicing\\trustedinstaller\.exe$'
+    filter_defender:
+        Image|re: '(?i)^[a-z]:\\(program files\\windows defender( advanced threat protection)?\\|programdata\\microsoft\\windows defender\\platform\\).*(msmpeng|mssense|mpcmdrun)\.exe$'
+    filter_office_update:
+        Image|re: '(?i)^[a-z]:\\program files( \(x86\))?\\common files\\microsoft shared\\clicktorun\\officeclicktorun\.exe$'
+    filter_user_update:
+        Image|re: '(?i)^[a-z]:\\users\\[^\\]+\\appdata\\local\\microsoft\\(onedrive\\([^\\]+\\)?onedrive(setup)?\.exe|teams\\update\.exe)$'
+    condition: ((selection_set and (selection_zero or selection_one or selection_policy or selection_exclusion or selection_proxy or (selection_rdp_port and not filter_rdp_default))) or (selection_delete and (selection_removed_policy or (selection_mru and not filter_explorer)))) and not filter_system and not filter_defender and not filter_office_update and not filter_user_update
+fields:
+    - Image
+    - TargetObject
+    - Details
+    - EventType
+falsepositives:
+    - Configuración autorizada de seguridad, soporte remoto y desarrollo
+    - Limpieza de historial por utilidades de privacidad; severidad baja
+level: high
+# winlog-hunter: WLH-029

@@ -7,6 +7,7 @@ import ntpath
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
+from .base import _maintenance_process, _registry_number
 
 
 _ORIGINAL_NAMES = {
@@ -133,6 +134,73 @@ def defense_commands(events: list[Event], cfg: Config) -> Iterator[Hit]:
                       {"indicador": reason, "proceso": p.image, "usuario": p.user,
                        "línea_de_comandos": _truncate(p.command_line),
                        "comando_de_eventlog": _truncate(eventlog_command)}, severity=severity, mitre=[technique])
+
+
+def _defense_owner(image: str) -> bool:
+    """Evita avisar de escrituras de mantenimiento de Windows y del propio Defender."""
+    if _maintenance_process(image):
+        return True
+    if _windows_path(image) and _exe(image) in {"svchost.exe", "securityhealthservice.exe"}:
+        return True
+    return _exe(image) in {"msmpeng.exe", "mssense.exe", "mpcmdrun.exe"} and bool(re.match(
+        r"^[a-z]:\\(?:program files\\windows defender(?: advanced threat protection)?\\|"
+        r"programdata\\microsoft\\windows defender\\platform\\)", image, re.I))
+
+
+@rule("WLH-029", "Desactivación de defensas en el registro", "high", ["T1562.001", "T1112"],
+      "Sysmon 12/13: valores que debilitan UAC, auditoría PowerShell, Defender, LSA, firewall o seguridad de Office.")
+def registry_defenses(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.event_id not in (12, 13) or not _is_sysmon(e):
+            continue
+        key, image, details = e.get("TargetObject"), e.get("Image"), e.get("Details")
+        if not key or _defense_owner(image):
+            continue
+        key = key.lower()
+        operation, number = e.get("EventType").lower(), _registry_number(details)
+        deleted = operation in {"deletekey", "deletevalue"}
+        reason, severity = "", "high"
+        if e.event_id == 13 and not deleted:
+            if key.endswith(r"\policies\system\enablelua") and number == 0:
+                reason = "UAC deshabilitado"
+            elif key.endswith(r"\powershell\scriptblocklogging\enablescriptblocklogging") and number == 0:
+                reason = "registro de bloques PowerShell deshabilitado"
+            elif key.endswith(r"\powershell\1\shellids\microsoft.powershell\executionpolicy") and details.lower() in {"bypass", "unrestricted"}:
+                reason, severity = "política de ejecución PowerShell permisiva", "low"
+            elif key.endswith(r"\environment\__pslockdownpolicy") or key.endswith(r"\session manager\environment\__pslockdownpolicy"):
+                if number == 0:
+                    reason, severity = "variable de restricción PowerShell deshabilitada", "medium"
+            elif re.search(r"\\windows defender\\(?:real-time protection\\)?(?:disableantispyware|disablerealtimemonitoring|disablebehaviormonitoring)$", key) and number == 1:
+                reason = "protección de Defender deshabilitada"
+            elif re.search(r"\\windows defender\\exclusions\\(?:paths|processes|extensions)\\[^\\].*$", key) and details:
+                reason, severity = "exclusión de Defender añadida", "low"
+            elif key.endswith(r"\securityproviders\wdigest\uselogoncredential") and number == 1:
+                reason = "WDigest configurado para conservar credenciales"
+            elif key.endswith(r"\control\lsa\runasppl") and number == 0:
+                reason = "protección de LSASS deshabilitada"
+            elif key.endswith(r"\control\terminal server\fdenytsconnections") and number == 0:
+                reason, severity = "acceso RDP habilitado", "low"
+            elif key.endswith(r"\control\terminal server\winstations\rdp-tcp\portnumber") and number is not None and number != 3389:
+                reason, severity = "puerto RDP modificado", "low"
+            elif re.search(r"\\services\\portproxy\\(?:v4tov4|v4tov6|v6tov4|v6tov6)\\tcp\\", key) and details:
+                reason, severity = "redirección de puertos configurada en el registro", "low"
+            elif re.search(r"\\(?:services\\sharedaccess\\parameters\\firewallpolicy|software\\policies\\microsoft\\windowsfirewall)\\(?:domainprofile|standardprofile|publicprofile)\\enablefirewall$", key) and number == 0:
+                reason = "perfil de firewall deshabilitado"
+            elif re.search(r"\\(?:software\\(?:policies\\)?microsoft\\office\\)\d+\.\d+\\(?:word|excel|powerpoint|access)\\security\\accessvbom$", key) and number == 1:
+                reason, severity = "acceso programático al proyecto VBA habilitado", "low"
+        elif e.event_id == 12 and deleted:
+            if re.search(r"\\powershell\\scriptblocklogging(?:\\enablescriptblocklogging)?$", key):
+                reason, severity = "configuración de registro de PowerShell eliminada", "medium"
+            elif key.endswith(r"\environment\__pslockdownpolicy"):
+                reason, severity = "variable de restricción PowerShell eliminada", "medium"
+            elif re.search(r"\\explorer\\(?:runmru|recentdocs|comdlg32\\(?:opensavepidlmru|lastvisitedpidlmru))(?:\\|$)", key):
+                # El propio Explorer limpia su historial cuando el usuario lo solicita.
+                if not (_exe(image) == "explorer.exe" and re.fullmatch(r"[a-z]:\\windows\\(?:syswow64\\)?explorer\.exe", image, re.I)):
+                    reason, severity = "historial MRU eliminado por un proceso ajeno a Explorer", "low"
+        if reason:
+            yield Hit([e], f"{reason.capitalize()} en {e.computer or UNKNOWN}",
+                      {"indicador": reason, "clave": e.get("TargetObject"), "valor": _truncate(details),
+                       "proceso": image, "operación": e.get("EventType")}, severity=severity)
 
 @rule(
     "WLH-005",

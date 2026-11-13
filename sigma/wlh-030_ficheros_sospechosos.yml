@@ -1,0 +1,59 @@
+title: 'Ficheros sospechosos'
+id: cf349647-05c1-4712-a28a-69fa10070030
+status: experimental
+description: 'Inicio, LSASS, memssp, rutas ambiguas de servicio y spooler. El motor también analiza Sysmon 2 con comparación de fechas (retroceso de al menos un día) y excepciones para copia, navegadores y compilación; esa comparación no se sustituye aquí por una selección amplia de Sysmon 2.'
+references:
+    - https://attack.mitre.org/techniques/T1547/001/
+    - https://attack.mitre.org/techniques/T1003/001/
+    - https://attack.mitre.org/techniques/T1070/006/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.persistence
+    - attack.credential_access
+    - attack.t1547.001
+    - attack.t1003.001
+    - attack.t1574.009
+    - attack.t1574.001
+    - attack.t1070.006
+logsource:
+    product: windows
+    category: file_event
+detection:
+    selection_startup:
+        TargetFilename|re: '(?i)\\start menu\\programs\\startup\\[^\\]+\.(lnk|exe|dll|bat|cmd|ps1|vbs|vbe|js|jse|wsf|url)$'
+    selection_memssp:
+        TargetFilename|endswith: '\mimilsa.log'
+    selection_dump:
+        TargetFilename|endswith: '.dmp'
+    selection_dump_writer:
+        Image|endswith:
+            - '\lsass.exe'
+            - '\rdrleakdiag.exe'
+    selection_dump_name:
+        TargetFilename|re: '(?i)\\lsass([._-]\d+)*\.dmp$'
+    filter_wer:
+        Image|endswith:
+            - '\WerFault.exe'
+            - '\WerFaultSecure.exe'
+            - '\wermgr.exe'
+    selection_service:
+        TargetFilename|re: '(?i)^[a-z]:\\(program\.exe|program files( \(x86\))?\\[^\\]+\.exe)$'
+    selection_spool:
+        TargetFilename|re: '(?i)^[a-z]:\\windows\\system32\\spool\\drivers\\.*\.(dll|exe|sys)$'
+    filter_printer:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*(spoolsv|printisolationhost|drvinst|pnputil|printfilterpipelinesvc|rundll32)\.exe$'
+    filter_installer:
+        Image|re: '(?i)^[a-z]:\\windows\\((system32|syswow64|winsxs)\\.*(msiexec|trustedinstaller|tiworker|setuphost|dismhost)\.exe|servicing\\trustedinstaller\.exe)$|^[a-z]:\\program files( \(x86\))?\\(common files\\microsoft shared\\clicktorun\\officeclicktorun\.exe|microsoft onedrive\\([^\\]+\\)?onedrivesetup\.exe|google\\(update|googleupdater)\\.*(googleupdate|updater)\.exe)$'
+    filter_user_update:
+        Image|re: '(?i)^[a-z]:\\users\\[^\\]+\\appdata\\local\\microsoft\\(onedrive\\([^\\]+\\)?onedrive(setup)?\.exe|teams\\update\.exe)$'
+    condition: (selection_startup or selection_memssp or (selection_dump and (selection_dump_writer or selection_dump_name) and not filter_wer) or selection_service or (selection_spool and not filter_printer)) and not filter_installer and not filter_user_update
+fields:
+    - Image
+    - TargetFilename
+falsepositives:
+    - Accesos directos de inicio configurados por el usuario
+    - Herramientas portables en la raíz de Program Files
+    - Instaladores y herramientas de impresión no incluidos en los filtros
+level: medium
+# winlog-hunter: WLH-030

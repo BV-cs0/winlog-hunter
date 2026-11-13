@@ -1,0 +1,74 @@
+title: 'Posible inyección de código'
+id: 916594cc-26a1-4bd4-ae05-2fa52e2c0026
+status: experimental
+description: 'Sysmon 8/10/25. Para Sysmon 10 se enumeran máscaras representativas; el motor comprueba los bits CREATE_THREAD, VM_OPERATION y VM_WRITE, ignora autoaccesos por GUID y agrupa ráfagas. 0x0800 por sí solo no basta. UNKNOWN con permisos solo de consulta/lectura es bajo por el JIT. Los accesos a LSASS permanecen en WLH-013. Los filtros Sigma de navegador aproximan el directorio común que verifica el motor.'
+references:
+    - https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+    - https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights
+    - https://attack.mitre.org/techniques/T1055/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.defense_evasion
+    - attack.t1055
+logsource:
+    product: windows
+    service: sysmon
+detection:
+    selection_thread:
+        EventID: 8
+        SourceImage|contains: '\'
+        TargetImage|contains: '\'
+    filter_system:
+        SourceImage: 'System'
+    filter_system_source:
+        SourceImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*(csrss|wininit|sysmon|sysmon64|sysmon64a)\.exe$'
+    filter_sysmon:
+        SourceImage|re: '(?i)^[a-z]:\\windows\\sysmon(64a?|)\.exe$'
+    filter_service_source:
+        SourceImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*svchost\.exe$'
+        TargetImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    filter_antivirus:
+        SourceImage|re: '(?i)^[a-z]:\\(program files\\windows defender( advanced threat protection)?\\.*(msmpeng|mssense)\.exe|programdata\\microsoft\\windows defender\\platform\\.*(msmpeng|mssense)\.exe|program files( \(x86\))?\\(eset\\.*\\(ekrn|eavp)|sophos\\.*\\(sophoshealth|sophosinterceptx|savservice)|sysmon\\sysmon(64a?|))\.exe)$'
+    filter_debugger:
+        SourceImage|re: '(?i)^[a-z]:\\program files( \(x86\))?\\(microsoft visual studio|windows kits|debugging tools for windows[^\\]*)\\.*(devenv|msvsmon|vsdebugconsole|vsdebugeng|windbg|cdb)\.exe$'
+    filter_chrome:
+        SourceImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)google\\chrome\\application\\.*(chrome|crashpad_handler)\.exe$'
+        TargetImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)google\\chrome\\application\\.*(chrome|crashpad_handler)\.exe$'
+    filter_edge:
+        SourceImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)microsoft\\edge\\application\\.*(msedge|crashpad_handler)\.exe$'
+        TargetImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)microsoft\\edge\\application\\.*(msedge|crashpad_handler)\.exe$'
+    filter_webview:
+        SourceImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)microsoft\\edgewebview\\application\\.*(msedgewebview2|crashpad_handler)\.exe$'
+        TargetImage|re: '(?i)^[a-z]:\\(program files( \(x86\))?\\|users\\[^\\]+\\appdata\\local\\)microsoft\\edgewebview\\application\\.*(msedgewebview2|crashpad_handler)\.exe$'
+    filter_firefox:
+        SourceImage|re: '(?i)^[a-z]:\\program files( \(x86\))?\\mozilla firefox\\.*(firefox|crashpad_handler)\.exe$'
+        TargetImage|re: '(?i)^[a-z]:\\program files( \(x86\))?\\mozilla firefox\\.*(firefox|crashpad_handler)\.exe$'
+    selection_access:
+        EventID: 10
+        SourceImage|contains: '\'
+        TargetImage|contains: '\'
+    selection_trace:
+        CallTrace|contains: 'UNKNOWN'
+    selection_rights:
+        SourceImage|re: '(?i)^[a-z]:\\(users\\|temp\\|windows\\temp\\|perflogs\\)'
+        GrantedAccess|re: '(?i)^0x(1f0fff|1fffff|143a|1f3fff)$'
+    filter_lsass:
+        TargetImage|endswith: '\lsass.exe'
+    filter_explorer_query:
+        SourceImage|re: '(?i)^[a-z]:\\windows\\(syswow64\\)?explorer\.exe$'
+        GrantedAccess|re: '(?i)^0x(1410|1010|1000|400|10)$'
+    selection_tamper:
+        EventID: 25
+    condition: ((selection_thread or (selection_access and (selection_trace or selection_rights) and not filter_lsass and not filter_explorer_query)) and not 1 of filter_system* and not filter_sysmon and not filter_service_source and not filter_antivirus and not filter_debugger and not filter_chrome and not filter_edge and not filter_webview and not filter_firefox) or selection_tamper
+fields:
+    - SourceImage
+    - TargetImage
+    - GrantedAccess
+    - CallTrace
+    - Type
+falsepositives:
+    - Instrumentación de seguridad no incluida en las excepciones
+    - Herramientas de depuración portables o instaladas fuera de Program Files
+level: high
+# winlog-hunter: WLH-026

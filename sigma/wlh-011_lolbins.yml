@@ -98,6 +98,11 @@ detection:
     selection_control:
         Image|endswith: '\control.exe'
         CommandLine|re: '(?i)([a-z]:\\(?!windows\\(system32|syswow64)\\)|\\\\|%[^%]+%)[^\r\n]*\.cpl\b'
+    selection_forced_script:
+        Image|endswith:
+            - '\wscript.exe'
+            - '\cscript.exe'
+        CommandLine|re: '(?i)/e:(vbs|vbscript|jscript|javascript)\b\s+"?[^\s"]+\.(?!(vbs|vbe|js|jse|wsf|wsh)\b)\w+'
     condition: 1 of selection_*
 fields:
     - Image

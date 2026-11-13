@@ -390,6 +390,64 @@ def _windows_path(path: str, folders: tuple[str, ...] = ("system32", "syswow64",
     return bool(re.match(r"^[a-z]:\\windows\\(?:" + "|".join(map(re.escape, folders)) + r")\\", path))
 
 
+def _program_files_path(path: str) -> bool:
+    """Reconoce Program Files por directorio completo, en cualquier unidad."""
+    return bool(re.match(r"^[a-z]:\\program files(?: \(x86\))?\\", ntpath.normpath(path).lower()))
+
+
+def _user_path(path: str) -> bool:
+    """Rutas de perfiles y temporales; ProgramData no es escribible por completo."""
+    return bool(re.match(r"^[a-z]:\\(?:users\\|temp\\|windows\\temp\\|perflogs\\)",
+                         ntpath.normpath(path).lower()))
+
+
+def _maintenance_process(path: str) -> bool:
+    """Instaladores habituales, acotados a sus rutas de instalación."""
+    name = _exe(path)
+    if _windows_path(path) and name in {"msiexec.exe", "trustedinstaller.exe", "tiworker.exe", "setuphost.exe", "dismhost.exe"}:
+        return True
+    if _windows_path(path, ("servicing",)) and name == "trustedinstaller.exe":
+        return True
+    if re.match(r"^[a-z]:\\users\\[^\\]+\\appdata\\local\\microsoft\\(?:"
+                r"onedrive\\(?:[^\\]+\\)?onedrive(?:setup)?\.exe|teams\\update\.exe)$",
+                ntpath.normpath(path).lower()):
+        return True
+    return bool(re.match(
+        r"^[a-z]:\\program files(?: \(x86\))?\\(?:"
+        r"common files\\microsoft shared\\clicktorun\\officeclicktorun\.exe|"
+        r"microsoft onedrive\\(?:[^\\]+\\)?onedrivesetup\.exe|"
+        r"google\\(?:update|googleupdater)\\.*(?:googleupdate|updater)\.exe)$",
+        ntpath.normpath(path).lower()))
+
+
+def _debugger_process(path: str) -> bool:
+    """Depuradores conocidos en sus directorios; no se confía solo en el nombre."""
+    name = _exe(path)
+    return bool(re.match(r"^[a-z]:\\program files(?: \(x86\))?\\(?:microsoft visual studio\\|windows kits\\|debugging tools for windows[^\\]*\\)",
+                         ntpath.normpath(path).lower())) and name in {
+        "devenv.exe", "msvsmon.exe", "vsdebugconsole.exe", "vsdebugeng.exe", "windbg.exe", "cdb.exe",
+    }
+
+
+def _browser_root(path: str) -> str:
+    """Devuelve el directorio de un navegador habitual, también en instalaciones por usuario."""
+    match = re.match(
+        r"^([a-z]:\\(?:program files(?: \(x86\))?\\(?:google\\chrome\\application|mozilla firefox|"
+        r"microsoft\\(?:edge|edgewebview)\\application)|users\\[^\\]+\\appdata\\local\\(?:"
+        r"google\\chrome\\application|microsoft\\(?:edge|edgewebview)\\application))\\)",
+        ntpath.normpath(path).lower())
+    return match.group(1) if match and _exe(path) in {"chrome.exe", "firefox.exe", "msedge.exe", "msedgewebview2.exe", "crashpad_handler.exe"} else ""
+
+
+def _registry_number(text: str) -> int | None:
+    """Lee DWORD/QWORD de Sysmon y exportaciones de texto sin confundir datos vacíos con cero."""
+    match = re.fullmatch(r"(?:(?:dword|qword)\s*\(\s*)?(0x[0-9a-f]+|\d+)\s*\)?", text.strip(), re.I)
+    if not match:
+        return None
+    value = match.group(1)
+    return int(value, 16 if value.lower().startswith("0x") else 10)
+
+
 _DUMP_COMMANDS = [
     ("comsvcs.dll MiniDump", re.compile(r"comsvcs(?:\.dll)?[\s,]+#?(?:minidump|24)\b", re.IGNORECASE), "T1003.001"),
     ("procdump contra LSASS", re.compile(r"procdump.*\blsass", re.IGNORECASE), "T1003.001"),

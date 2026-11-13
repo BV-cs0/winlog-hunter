@@ -1,0 +1,83 @@
+title: 'Conexiones de red de shells y LOLBins'
+id: dd278784-42de-420f-8526-6c85a7c70031
+status: experimental
+description: 'Conexiones salientes públicas y RDP inesperado. PowerShell, MSBuild, cmd, certutil, BITS, Notepad y túneles SSH son bajos en el motor. El motor usa ipaddress y agrupa conexiones repetidas por proceso, equipo y destino. Los CIDR son la aproximación Sigma a esa clasificación.'
+references:
+    - https://attack.mitre.org/techniques/T1572/
+    - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-5156
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.command_and_control
+    - attack.t1059
+    - attack.t1105
+    - attack.t1572
+logsource:
+    product: windows
+detection:
+    selection_sysmon:
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+        EventID: 3
+    selection_shell:
+        Image|re: '(?i)\\(powershell|pwsh|cmd|mshta|rundll32|regsvr32|wscript|cscript|msbuild|certutil|bitsadmin|notepad)\.exe$'
+    selection_destination:
+        DestinationIp|contains: '.'
+    selection_ipv6:
+        DestinationIp|contains: ':'
+    filter_local:
+        DestinationIp|cidr:
+            - '0.0.0.0/8'
+            - '10.0.0.0/8'
+            - '100.64.0.0/10'
+            - '127.0.0.0/8'
+            - '169.254.0.0/16'
+            - '172.16.0.0/12'
+            - '192.0.0.0/24'
+            - '192.0.2.0/24'
+            - '192.168.0.0/16'
+            - '198.18.0.0/15'
+            - '198.51.100.0/24'
+            - '203.0.113.0/24'
+            - '224.0.0.0/4'
+            - '240.0.0.0/4'
+            - '::/128'
+            - '::1/128'
+            - '::ffff:0:0/96'
+            - 'fc00::/7'
+            - 'fe80::/10'
+            - 'ff00::/8'
+            - '2001:db8::/32'
+    filter_inbound:
+        Initiated: 'false'
+    selection_rdp:
+        DestinationPort: 3389
+        Image|contains: '\'
+    filter_client:
+        Image|re: '(?i)\\(mstsc|svchost|msrdc|rdcman|mremoteng|remotedesktop|windowsapp)\.exe$'
+    selection_wfp:
+        EventID: 5156
+        Channel: 'Security'
+        DestAddress:
+            - '127.0.0.1'
+            - '::1'
+            - '::ffff:127.0.0.1'
+        DestPort: 3389
+        Application|contains: '\'
+    filter_wfp_client:
+        Application|re: '(?i)\\(mstsc|svchost|msrdc|rdcman|mremoteng|remotedesktop|windowsapp)\.exe$'
+    filter_wfp_inbound:
+        Direction:
+            - '%%14592'
+            - Inbound
+            - entrada
+    condition: (selection_sysmon and not filter_inbound and ((selection_shell and (selection_destination or selection_ipv6) and not filter_local) or (selection_rdp and not filter_client))) or (selection_wfp and not filter_wfp_client and not filter_wfp_inbound)
+fields:
+    - Image
+    - Application
+    - DestinationIp
+    - DestinationPort
+falsepositives:
+    - Administración de sistemas, certificados, NuGet y PowerShellGet; severidad baja
+    - Clientes RDP alternativos o herramientas autorizadas de túnel
+level: medium
+# winlog-hunter: WLH-031

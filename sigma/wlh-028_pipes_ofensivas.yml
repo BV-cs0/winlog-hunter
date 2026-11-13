@@ -1,0 +1,59 @@
+title: 'Named pipes de herramientas ofensivas'
+id: 7e44f49a-aa1c-44bc-b123-b82d70a90028
+status: experimental
+description: 'Canales de ejecución remota, Cobalt Strike, delegación y suplantación. PsExec y clones se consideran bajos en el motor por su uso administrativo legítimo. spoolss solo se evalúa al crearse, no al conectarse un cliente de impresión.'
+references:
+    - https://attack.mitre.org/techniques/T1134/001/
+    - https://github.com/SigmaHQ/sigma/tree/master/rules/windows/pipe_created
+    - https://github.com/Azure/Azure-Sentinel/blob/master/Solutions/Microsoft%20Defender%20XDR/Analytic%20Rules/Command%20and%20Control/C2-NamedPipe.yaml
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.lateral_movement
+    - attack.privilege_escalation
+    - attack.t1021.002
+    - attack.t1559
+    - attack.t1134
+logsource:
+    product: windows
+detection:
+    selection_pipe_event:
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+        EventID:
+            - 17
+            - 18
+    selection_tool:
+        PipeName|re: '(?i)^(\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\)(psexesvc|paexec|csexec|remcom)($|[_\-\\]|\d|svc)'
+    selection_cobalt:
+        PipeName|re: '(?i)^(\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\)((msagent|postex)_[a-z0-9_\-]+|status_[0-9a-f]{2,16}|msse-[0-9a-z]+-server)$'
+    selection_nested:
+        PipeName|re: '(?i)^(\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\).+\\pipe\\'
+    selection_kekeo:
+        PipeName|re: '(?i)^(\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\)(kekeo|tsssp)($|[_\-\\])'
+    selection_spool:
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+        EventID: 17
+        PipeName|re: '(?i)^(\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\)spoolss$'
+        Image|contains: '\'
+    filter_spooler:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*spoolsv\.exe$'
+    selection_process:
+        Channel: 'Microsoft-Windows-Sysmon/Operational'
+        EventID: 1
+        Image|endswith: '\cmd.exe'
+        CommandLine|re: '(?i)/[ck]\s+echo\s+[^>\r\n]+>\s*"?\\\\\.\\pipe\\[^\s"]+'
+    selection_service:
+        Channel: 'System'
+        EventID: 7045
+        ImagePath|re: '(?i)^"?([a-z]:\\windows\\(system32|syswow64)\\)?cmd(\.exe)?"?\s+.*?/[ck]\s+echo\s+[^>\r\n]+>\s*"?\\\\\.\\pipe\\[^\s"]+'
+    condition: (selection_pipe_event and (selection_tool or selection_cobalt or selection_nested or selection_kekeo)) or (selection_spool and not filter_spooler) or selection_process or selection_service
+fields:
+    - Image
+    - PipeName
+    - CommandLine
+    - ImagePath
+falsepositives:
+    - PsExec y herramientas similares de soporte remoto autorizado; severidad baja
+    - Pruebas de IPC con echo; severidad media si no se instala como servicio
+level: high
+# winlog-hunter: WLH-028
