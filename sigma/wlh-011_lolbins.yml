@@ -1,9 +1,10 @@
 title: 'Uso malicioso de binario del sistema (LOLBin)'
 id: fb1726d1-b836-5b33-a576-5f59d5519002
 status: experimental
-description: 'certutil, mshta, rundll32, regsvr32, bitsadmin o wmic con argumentos típicos de descarga o ejecución.'
+description: 'Binarios legítimos con argumentos de ejecución indirecta, carga de scripts o descarga remota. FTP, msxsl, pcalua y msiexec se gradúan como medios en el motor.'
 references:
     - https://github.com/BV-cs0/winlog-hunter
+    - https://lolbas-project.github.io/
 author: Bryan Valenzuela
 date: 2026-11-07
 tags:
@@ -55,6 +56,48 @@ detection:
         CommandLine|contains:
             - 'process call create'
             - '/node:'
+    selection_pcalua:
+        Image|endswith: '\pcalua.exe'
+        CommandLine|re: '(?i)(^|\s)-a\s+'
+    selection_msxsl:
+        Image|endswith: '\msxsl.exe'
+        CommandLine|re: '^\s*("[^"]+"|\S+)\s+("[^"]+"|\S+)\s+("[^"]+"|\S+)'
+    selection_desktopimg:
+        Image|endswith: '\desktopimgdownldr.exe'
+        CommandLine|re: '(?i)/lockscreenurl(\s|:)'
+    selection_ftp:
+        Image|endswith: '\ftp.exe'
+        CommandLine|re: '(?i)(^|\s)-s:'
+    selection_hh:
+        Image|endswith: '\hh.exe'
+        CommandLine|re: '(?i)(https?://|\\\\)[^\r\n]*\.chm\b'
+    selection_hh_child:
+        ParentImage|endswith: '\hh.exe'
+    selection_msxsl_child:
+        ParentImage|endswith: '\msxsl.exe'
+        Image|re: '(?i)\\(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|schtasks|wmic)\.exe$'
+    selection_wuauclt:
+        Image|endswith: '\wuauclt.exe'
+        CommandLine|re: '(?i)/runhandlercomserver\b'
+    selection_wuauclt_child:
+        ParentImage|endswith: '\wuauclt.exe'
+        ParentCommandLine|re: '(?i)/runhandlercomserver\b'
+        Image|re: '(?i)\\(cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|schtasks|wmic)\.exe$'
+    selection_rundll32_more:
+        Image|endswith: '\rundll32.exe'
+        CommandLine|re: '(?i)advpack(\.dll)?\s*,\s*(launchinfsection|registerocx)|zipfldr(\.dll)?\s*,\s*routethecall|pcwutl(\.dll)?\s*,\s*launchapplication|shell32(\.dll)?\s*,\s*shellexec_rundll|\.cpl\b'
+    selection_vshadow:
+        Image|endswith: '\vshadow.exe'
+        CommandLine|re: '(?i)(^|\s)-exec(=|\s)'
+    selection_msiexec:
+        Image|endswith: '\msiexec.exe'
+        CommandLine|re: '(?i)https?://|(^|\s)/y(\s|$)'
+    selection_wmic_xsl:
+        Image|endswith: '\wmic.exe'
+        CommandLine|re: '(?i)/format:\s*["'']?[^\r\n]*\.xsl\b'
+    selection_control:
+        Image|endswith: '\control.exe'
+        CommandLine|re: '(?i)([a-z]:\\(?!windows\\(system32|syswow64)\\)|\\\\|%[^%]+%)[^\r\n]*\.cpl\b'
     condition: 1 of selection_*
 fields:
     - Image

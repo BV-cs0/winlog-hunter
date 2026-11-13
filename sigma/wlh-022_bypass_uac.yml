@@ -1,0 +1,84 @@
+title: 'Posible bypass de UAC'
+id: d79a1c02-8485-4824-9565-02f3ed529422
+status: experimental
+description: 'Asociaciones por usuario y comportamiento de autoelevables. Selecciones Sysmon; los hijos de proceso también se pueden traducir a Security 4688.'
+references:
+    - https://attack.mitre.org/techniques/T1548/002/
+    - https://github.com/hfiref0x/UACME
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.privilege_escalation
+    - attack.t1548.002
+logsource:
+    product: windows
+    service: sysmon
+detection:
+    selection_registry:
+        EventID:
+            - 12
+            - 13
+        TargetObject|re: '(?i)^((HKCU|HKU\\[^\\]+)\\Software\\Classes|HKU\\[^\\]+_Classes)\\(ms-settings|mscfile|exefile|Folder|Launcher\.SystemSettings)\\shell\\open\\command(\\|$)|^(HKCU|HKU\\[^\\]+)\\(Environment\\(windir|SystemRoot)$|Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+(\\\(Default\))?$)'
+    filter_deleted:
+        EventType:
+            - DeleteKey
+            - DeleteValue
+    selection_parent:
+        EventID: 1
+        ParentImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\.*\\?(fodhelper|computerdefaults|eventvwr|sdclt|slui|wsreset|compmgmtlauncher|changepk|cmstp|perfmon)\.exe$'
+    selection_mmc:
+        EventID: 1
+        ParentImage|endswith: '\mmc.exe'
+        ParentCommandLine|re: '(?i)([a-z]:\\(users|temp|programdata)\\|%temp%)[^"\r\n]*\.msc\b'
+    selection_system_parent:
+        ParentImage|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    selection_shell:
+        Image|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\rundll32.exe'
+            - '\regsvr32.exe'
+            - '\certutil.exe'
+            - '\bitsadmin.exe'
+            - '\schtasks.exe'
+            - '\wmic.exe'
+    selection_child:
+        Image|contains: '\'
+    filter_system_child:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    selection_cmstp:
+        EventID: 1
+        Image|endswith: '\cmstp.exe'
+        CommandLine|re: '(?i)(^|\s)/(s|au)(\s|$).*\.inf\b'
+    selection_load:
+        EventID: 7
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs|ehome)\\.*(sysprep|cliconfg|migwiz|mcx2prov)\.exe$'
+        ImageLoaded|contains: '\'
+    selection_unsigned:
+        Signed: 'false'
+    filter_system_dll:
+        ImageLoaded|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    selection_mock:
+        EventID: 11
+        TargetFilename|re: '(?i)^[a-z]:\\windows +\\(system32|syswow64)\\'
+    selection_write:
+        EventID: 11
+        TargetFilename|re: '(?i)^[a-z]:\\windows\\(system32|syswow64)\\(sysprep|oobe|migwiz)\\.*\.(dll|exe)$'
+    filter_installer:
+        Image|re: '(?i)^c:\\(windows\\(system32|syswow64)\\(msiexec|services|trustedinstaller)\.exe|windows\\servicing\\|windows\\winsxs\\.*tiworker\.exe|program files( \(x86\))?\\(windows defender|microsoft onedrive|google\\update))'
+    condition: (selection_registry and not filter_deleted) or ((selection_parent or (selection_mmc and selection_system_parent)) and (selection_shell or (selection_child and not filter_system_child))) or selection_cmstp or (selection_load and (selection_unsigned or not filter_system_dll)) or selection_mock or (selection_write and not filter_installer)
+fields:
+    - Image
+    - ParentImage
+    - TargetObject
+    - ImageLoaded
+    - TargetFilename
+falsepositives:
+    - Registro legítimo de App Paths por usuario; severidad media en el motor
+    - Instalaciones silenciosas de perfiles cmstp; severidad media en el motor
+level: high
+# winlog-hunter: WLH-022

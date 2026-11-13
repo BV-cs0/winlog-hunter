@@ -5,39 +5,19 @@ Cada regla recibe la lista de eventos ordenada por fecha y devuelve ``Hit``s.
 Para añadir una regla basta con decorar una función con ``@rule(...)``.
 """
 
-
 from __future__ import annotations
 
-
 import base64
-
-
 import binascii
-
-
 import html
-
-
+import ntpath
 import re
-
-
 from bisect import bisect_left, bisect_right
-
-
 from collections import Counter, defaultdict
-
-
 from dataclasses import dataclass
-
-
 from datetime import timedelta
-
-
 from pathlib import PureWindowsPath
-
-
 from typing import Any, Callable, Iterable, Iterator
-
 
 from ..models import Event, Finding
 
@@ -402,6 +382,12 @@ _DUMP_TOOLS = re.compile(
 
 def _is_sysmon(e: Event) -> bool:
     return "sysmon" in (e.channel + e.provider).lower()
+
+
+def _windows_path(path: str, folders: tuple[str, ...] = ("system32", "syswow64", "winsxs")) -> bool:
+    """Comprueba directorios de Windows completos, sin aceptar prefijos parecidos."""
+    path = ntpath.normpath(path.strip('"')).lower()
+    return bool(re.match(r"^[a-z]:\\windows\\(?:" + "|".join(map(re.escape, folders)) + r")\\", path))
 
 
 _DUMP_COMMANDS = [

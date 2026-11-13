@@ -1,0 +1,91 @@
+title: 'Binario renombrado o disfrazado'
+id: 643e55ac-2d46-47af-9b69-0fcfca150423
+status: experimental
+description: 'Compara OriginalFileName de utilidades conocidas con Image y valida rutas de procesos de sistema. El motor gradúa a alta las rutas falsas y la accesibilidad sustituida.'
+references:
+    - https://attack.mitre.org/techniques/T1036/003/
+    - https://attack.mitre.org/techniques/T1036/005/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.defense_evasion
+    - attack.t1036.003
+    - attack.t1036.005
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_cmd:
+        OriginalFileName: 'cmd.exe'
+    filter_cmd:
+        Image|endswith: '\cmd.exe'
+    selection_ps:
+        OriginalFileName: 'powershell.exe'
+    filter_ps:
+        Image|endswith: '\powershell.exe'
+    selection_pwsh:
+        OriginalFileName: 'pwsh.exe'
+    filter_pwsh:
+        Image|endswith: '\pwsh.exe'
+    selection_rundll:
+        OriginalFileName: 'rundll32.exe'
+    filter_rundll:
+        Image|endswith: '\rundll32.exe'
+    selection_regsvr:
+        OriginalFileName: 'regsvr32.exe'
+    filter_regsvr:
+        Image|endswith: '\regsvr32.exe'
+    selection_certutil:
+        OriginalFileName: 'certutil.exe'
+    filter_certutil:
+        Image|endswith: '\certutil.exe'
+    selection_mshta:
+        OriginalFileName: 'mshta.exe'
+    filter_mshta:
+        Image|endswith: '\mshta.exe'
+    selection_wmic:
+        OriginalFileName: 'wmic.exe'
+    filter_wmic:
+        Image|endswith: '\wmic.exe'
+    selection_psexec:
+        OriginalFileName:
+            - 'psexec.c'
+            - 'psexec.exe'
+    filter_psexec:
+        Image|endswith:
+            - '\psexec.exe'
+            - '\psexec64.exe'
+            - '\psexec64a.exe'
+    selection_procdump:
+        OriginalFileName:
+            - 'procdump'
+            - 'procdump.exe'
+    filter_procdump:
+        Image|endswith:
+            - '\procdump.exe'
+            - '\procdump64.exe'
+            - '\procdump64a.exe'
+    selection_system:
+        Image|endswith:
+            - '\svchost.exe'
+            - '\lsass.exe'
+            - '\services.exe'
+            - '\csrss.exe'
+            - '\winlogon.exe'
+            - '\smss.exe'
+            - '\wermgr.exe'
+    filter_system:
+        Image|re: '(?i)^[a-z]:\\windows\\(system32|syswow64|winsxs)\\'
+    selection_explorer:
+        Image|endswith: '\explorer.exe'
+    filter_explorer:
+        Image|re: '(?i)^[a-z]:\\windows\\(explorer\.exe$|winsxs\\)'
+    condition: (selection_cmd and not filter_cmd) or (selection_ps and not filter_ps) or (selection_pwsh and not filter_pwsh) or (selection_rundll and not filter_rundll) or (selection_regsvr and not filter_regsvr) or (selection_certutil and not filter_certutil) or (selection_mshta and not filter_mshta) or (selection_wmic and not filter_wmic) or (selection_psexec and not filter_psexec) or (selection_procdump and not filter_procdump) or (selection_system and not filter_system) or (selection_explorer and not filter_explorer)
+fields:
+    - Image
+    - OriginalFileName
+    - CommandLine
+falsepositives:
+    - Copias renombradas para administración o diagnóstico
+level: medium
+# winlog-hunter: WLH-023

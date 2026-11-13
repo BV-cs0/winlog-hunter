@@ -1,0 +1,70 @@
+title: 'Shell lanzada por un servidor o servicio'
+id: 217d580e-5231-4146-931a-b44772ad1524
+status: experimental
+description: 'Hijos de servidores y servicios y activación DCOM. Excel con shell se mantiene en WLH-012 y WMI/WinRM en WLH-018 para no duplicar hallazgos.'
+references:
+    - https://attack.mitre.org/techniques/T1505/003/
+    - https://attack.mitre.org/techniques/T1021/003/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.execution
+    - attack.persistence
+    - attack.lateral_movement
+    - attack.t1505.003
+    - attack.t1190
+    - attack.t1021.003
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_parent:
+        ParentImage|endswith:
+            - '\w3wp.exe'
+            - '\httpd.exe'
+            - '\tomcat.exe'
+            - '\tomcat8.exe'
+            - '\tomcat9.exe'
+            - '\tomcat10.exe'
+            - '\php-cgi.exe'
+            - '\nginx.exe'
+            - '\sqlservr.exe'
+            - '\spoolsv.exe'
+            - '\msiexec.exe'
+            - '\smss.exe'
+    selection_embedded_parent:
+        ParentImage|endswith:
+            - '\mmc.exe'
+            - '\explorer.exe'
+        ParentCommandLine|re: '(?i)(^|\s)[-/]embedding(\s|$)'
+    selection_child:
+        Image|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\rundll32.exe'
+            - '\regsvr32.exe'
+            - '\certutil.exe'
+            - '\bitsadmin.exe'
+            - '\schtasks.exe'
+            - '\wmic.exe'
+    selection_activation:
+        ParentImage|endswith: '\svchost.exe'
+        Image|endswith:
+            - '\mmc.exe'
+            - '\explorer.exe'
+            - '\excel.exe'
+        CommandLine|re: '(?i)(^|\s)[-/]embedding(\s|$)'
+    condition: ((selection_parent or selection_embedded_parent) and selection_child) or selection_activation
+fields:
+    - Image
+    - ParentImage
+    - ParentCommandLine
+    - CommandLine
+falsepositives:
+    - Instaladores que usan shells y activaciones DCOM legítimas; severidad media en el motor
+level: high
+# winlog-hunter: WLH-024

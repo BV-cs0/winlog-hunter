@@ -9,7 +9,7 @@ from helpers import SAMPLE, ev
 
 from winlog_hunter.cli import main
 from winlog_hunter.report import Stats, render_console, render_html, render_markdown
-from winlog_hunter.rules import run_rules
+from winlog_hunter.rules import RULES, run_rules
 
 EVIL = "<script>alert(1)</script>\x1b[31m"
 
@@ -77,7 +77,9 @@ class CommandLine(unittest.TestCase):
     def test_rules_listing(self):
         code, out, _ = run_cli("rules")
         self.assertEqual(code, 0)
-        self.assertEqual(out.count("WLH-"), 21)
+        self.assertEqual(out.count("WLH-"), len(RULES))
+        for rule in RULES:
+            self.assertEqual(out.count(rule.id), 1)
 
 
 if __name__ == "__main__":

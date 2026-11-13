@@ -1,0 +1,74 @@
+title: 'Evasión e inhibición de recuperación por comandos'
+id: a7546620-e225-4daa-8ef2-a3c953262525
+status: experimental
+description: 'Comandos de recuperación, auditoría, firewall, Defender y EventLog. El motor también interpreta cmd /c y correlaciona taskkill /pid con un svchost EventLog observado en la ventana; esa correlación no se representa aquí.'
+references:
+    - https://attack.mitre.org/techniques/T1490/
+    - https://attack.mitre.org/techniques/T1562/001/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.impact
+    - attack.defense_evasion
+    - attack.t1490
+    - attack.t1562.001
+    - attack.t1562.004
+    - attack.t1564.001
+    - attack.t1070
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_vss:
+        Image|endswith: '\vssadmin.exe'
+        CommandLine|re: '(?i)\bdelete\s+shadows\b'
+    selection_wmic:
+        Image|endswith: '\wmic.exe'
+        CommandLine|re: '(?i)\bshadowcopy\b.*\bdelete\b'
+    selection_wbadmin:
+        Image|endswith: '\wbadmin.exe'
+        CommandLine|re: '(?i)\bdelete\s+(catalog|systemstatebackup|backup)\b'
+    selection_bcdedit:
+        Image|endswith: '\bcdedit.exe'
+        CommandLine|re: '(?i)/set\b.*(\brecoveryenabled\s+no\b|\bbootstatuspolicy\s+ignore(all|boot|shutdown)?failures\b)'
+    selection_wevtutil:
+        Image|endswith: '\wevtutil.exe'
+        CommandLine|re: '(?i)(^|\s)(cl|clear-log)\s+|(^|\s)(sl|set-log)\s+.* /e:false\b'
+    selection_auditpol:
+        Image|endswith: '\auditpol.exe'
+        CommandLine|re: '(?i)/(clear|remove)\b|/set\b.* /(success|failure):disable\b'
+    selection_netsh:
+        Image|endswith: '\netsh.exe'
+        CommandLine|re: '(?i)\badvfirewall\s+set\b.*\bstate\s+off\b|\binterface\s+portproxy\s+add\b'
+    selection_defender:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\powershell_ise.exe'
+        CommandLine|re: '(?i)\bset-mppreference\b[^;\r\n]*-disable\w+\s+(\$true|1)\b|\badd-mppreference\b[^;\r\n]*-exclusion(path|process|extension)\b'
+    selection_attrib:
+        Image|endswith: '\attrib.exe'
+        CommandLine|contains|all:
+            - '+h'
+            - '+s'
+    selection_net:
+        Image|endswith:
+            - '\net.exe'
+            - '\net1.exe'
+        CommandLine|re: '(?i)\bstop\s+"?eventlog\b'
+    selection_sc:
+        Image|endswith: '\sc.exe'
+        CommandLine|re: '(?i)\bconfig\s+"?eventlog"?\s+.*\bstart=\s*disabled\b'
+    selection_taskkill:
+        Image|endswith: '\taskkill.exe'
+        CommandLine|re: '(?i)\bservices\s+eq\s+eventlog\b'
+    condition: 1 of selection_*
+fields:
+    - Image
+    - CommandLine
+    - User
+falsepositives:
+    - Administración autorizada de copias y registros
+    - Exclusiones de Defender, portproxy y atributos de ficheros legítimos; severidad media en el motor
+level: high
+# winlog-hunter: WLH-025
