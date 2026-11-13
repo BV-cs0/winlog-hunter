@@ -32,12 +32,18 @@ _MORE_LOLBINS = [
 _MORE_LOLBINS = [(name, re.compile(pattern, re.I), [mitre], label)
                  for name, pattern, mitre, label in _MORE_LOLBINS]
 
+_LOLBINS_POR_NOMBRE = {}
+for _nombre, _patron, _mitre, _tecnica in _LOLBINS + _MORE_LOLBINS:
+    _LOLBINS_POR_NOMBRE.setdefault(_nombre, []).append((_patron, _mitre, _tecnica))
+
 @rule(
     "WLH-010",
     "PowerShell sospechoso",
     "high",
     ["T1059.001"],
     "PowerShell con comando codificado, descarga + IEX o evasión de AMSI (alta); varias banderas de ocultación (media).",
+    eventos={4688, 1},
+    agrupar_por=('proceso_padre', 'línea_de_comandos', 'comando_decodificado', 'usuario', 'indicadores'),
 )
 def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
@@ -73,6 +79,8 @@ def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1218"],
     "Binarios legítimos con argumentos de ejecución indirecta, carga de scripts o descarga remota.",
+    eventos={4688, 1, 1042, 1040},
+    agrupar_por=('binario', 'técnica', 'proceso_padre', 'línea_de_comandos', 'usuario', 'url', 'indicador'),
 )
 def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -85,7 +93,6 @@ def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
                           severity="low", mitre=["T1218.007"])
     for p in _processes(events):
         exe = _exe(p.image)
-        candidates = _LOLBINS + _MORE_LOLBINS
         if _exe(p.parent) == "hh.exe":
             yield Hit([p.event], f"hh.exe lanzó {exe} en {p.event.computer or UNKNOWN}",
                       {"proceso_padre": p.parent, "proceso_hijo": p.image,
@@ -102,8 +109,9 @@ def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
                        "línea_de_comandos": _truncate(p.command_line)},
                       mitre=["T1220"] if _exe(p.parent) == "msxsl.exe" else ["T1218"])
             continue
-        for name, pattern, mitre, technique in candidates:
-            if exe == name and pattern.search(p.command_line):
+        for pattern, mitre, technique in _LOLBINS_POR_NOMBRE.get(exe, ()):
+            if pattern.search(p.command_line):
+                name = exe
                 yield Hit(
                     [p.event],
                     f"{name} usado para {technique} en {p.event.computer or UNKNOWN}",
@@ -126,7 +134,9 @@ _SERVER_PARENTS = {"w3wp.exe", "httpd.exe", "tomcat.exe", "tomcat8.exe", "tomcat
 
 @rule("WLH-024", "Shell lanzada por un servidor o servicio", "high",
       ["T1505.003", "T1190", "T1021.003"],
-      "Servidores o servicios abren intérpretes, activación DCOM inusual y auditoría SQL de xp_cmdshell.")
+      "Servidores o servicios abren intérpretes, activación DCOM inusual y auditoría SQL de xp_cmdshell.", eventos={4688, 1, 15457, 33205},
+    agrupar_por=('indicador', 'proceso_padre', 'proceso_hijo', 'línea_de_comandos', 'usuario', 'comando_del_padre', 'sentencia'),
+)
 def server_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         if not e.provider.lower().startswith("mssql"):
@@ -166,6 +176,8 @@ def server_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1566.001", "T1204.002"],
     "Word, Excel, Outlook... abren cmd, PowerShell u otros intérpretes: patrón clásico de documento malicioso.",
+    eventos={4688, 1},
+    agrupar_por=('proceso_padre', 'proceso_hijo', 'línea_de_comandos', 'usuario'),
 )
 def office_child_process(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
@@ -189,6 +201,7 @@ def office_child_process(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1059.001"],
     "PowerShell 4104, 4103 y 800: indicadores de volcado, AMSI, inyección, descarga dinámica y ofuscación combinada.",
+    eventos={4104, 800, 4103},
 )
 def malicious_script_block(events: list[Event], cfg: Config) -> Iterator[Hit]:
     seen: set[tuple[str, int, str]] = set()
@@ -263,7 +276,7 @@ def _routine_thread_source(source: str, target: str) -> bool:
 
 
 @rule("WLH-026", "Posible inyección de código", "high", ["T1055"],
-      "Sysmon 8/10/25: hilos remotos, acceso con escritura y creación de hilos, pila sin módulo o manipulación de imagen.")
+      "Sysmon 8/10/25: hilos remotos, acceso con escritura y creación de hilos, pila sin módulo o manipulación de imagen.", eventos={8, 25, 10})
 def code_injection(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str, str, str, str], list[Event]] = {}
     for e in events:
@@ -319,7 +332,9 @@ _DLL_LOADER_PAIRS = {("winword.exe", "wwlib.dll"), ("svchost.exe", "cdpsshims.dl
 
 
 @rule("WLH-027", "Carga de DLL sospechosa o sideloading", "medium", ["T1574.001", "T1574.002"],
-      "Sysmon 7: DLL explícitamente sin firma fuera de Windows y Program Files, con cargador de sistema o pareja conocida.")
+      "Sysmon 7: DLL explícitamente sin firma fuera de Windows y Program Files, con cargador de sistema o pareja conocida.", eventos={7},
+    agrupar_por=('proceso', 'dll', 'firma_de_la_dll', 'indicador'),
+)
 def suspicious_dll(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         if e.event_id != 7 or not _is_sysmon(e) or e.get("Signed").lower() != "false":

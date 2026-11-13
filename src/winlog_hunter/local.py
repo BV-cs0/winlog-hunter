@@ -22,9 +22,9 @@ from typing import Callable
 from xml.sax.saxutils import escape
 
 from .models import SEVERITY_ORDER
-from .parsers import load_events
+from .parsers import load_events, consultas_xpath, limite_temporal
 from .report import RENDERERS, SEVERITY_LABEL, Stats
-from .rules import run_rules
+from .rules import run_rules, planificar
 
 TASK_NAME = "winlog-hunter diario"
 LOGS = (
@@ -96,7 +96,7 @@ def export_logs(hours: int, folder: Path) -> Export:
     result = Export()
     listed = _run(["wevtutil", "el"])
     available = {line.strip().lower() for line in listed.stdout.splitlines()}
-    query = f"*[System[TimeCreated[timediff(@SystemTime) <= {hours * 3_600_000}]]]"
+    query = next(consultas_xpath(desde=limite_temporal(f"{hours}h")))
     for log in LOGS:
         if log.lower() not in available:
             result.messages.append(f"Omitido {log}: no existe en este equipo")
@@ -157,7 +157,7 @@ def analyze_this_computer(
         if not exported.files:
             raise LocalError("no se pudo exportar ningún registro")
 
-        loaded = load_events(exported.files)
+        loaded = load_events(exported.files, plan=planificar(), procesos=os.cpu_count() or 1, estadisticas=True)
         findings = run_rules(loaded.events)
         stats = Stats(
             events=len(loaded.events),
@@ -165,6 +165,7 @@ def analyze_this_computer(
             first_event=loaded.events[0].timestamp if loaded.events else None,
             last_event=loaded.events[-1].timestamp if loaded.events else None,
             warnings=loaded.warnings,
+            leidos=loaded.leidos, descartados=loaded.descartados, segundos=loaded.segundos,
         )
         html = output / f"informe_{stamp}.html"
         report_json = output / f"informe_{stamp}.json"

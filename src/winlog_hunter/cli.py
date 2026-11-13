@@ -6,17 +6,17 @@ import argparse
 import os
 import re
 import sys
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from pathlib import Path
 
 from . import __version__, actualizacion
 from .models import SEVERITIES, SEVERITY_ORDER
-from .parsers import load_events
+from .parsers import load_events, limite_temporal
 from .report import RENDERERS, SEVERITY_LABEL, Stats, render_console
-from .rules import RULES, Config, run_rules
+from .rules import RULES, Config, run_rules, planificar
 
-FORMATS = ("console", "json", "markdown", "html")
-_EXTENSION_FORMAT = {".json": "json", ".md": "markdown", ".markdown": "markdown", ".html": "html", ".htm": "html"}
+FORMATS = ("console", "json", "csv", "markdown", "html")
+_EXTENSION_FORMAT = {".json": "json", ".csv": "csv", ".md": "markdown", ".markdown": "markdown", ".html": "html", ".htm": "html"}
 
 
 EXAMPLES = """ejemplos:
@@ -73,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--window", type=float, default=5, help="ventana de correlación en minutos (5)")
     analyze.add_argument("--lateral-hosts", type=int, default=3, help="equipos distintos para movimiento lateral (3)")
     analyze.add_argument("--no-color", action="store_true", help="desactiva los colores en consola")
+    analyze.add_argument("--todos-los-eventos", action="store_true", help="desactiva la selección de eventos por reglas")
+    analyze.add_argument("--procesos", type=int, default=os.cpu_count() or 1, help="procesos de lectura (núcleos disponibles; 1 desactiva)")
+    analyze.add_argument("--desde", help="fecha inicial ISO o relativa (24h, 7d), inclusive")
+    analyze.add_argument("--hasta", help="fecha final ISO o relativa (24h, 7d), inclusive")
+    analyze.add_argument("--progreso", action="store_true", help="muestra avance y velocidad en stderr")
+    analyze.add_argument("--limite-html", type=int, default=200, help="máximo de hallazgos por regla en HTML (200)")
 
     sub.add_parser("rules", help="lista las reglas de detección")
 
@@ -301,7 +307,7 @@ def _analyze(args: argparse.Namespace) -> int:
         if unknown:
             print(f"error: reglas desconocidas: {', '.join(sorted(unknown))}", file=sys.stderr)
             return 2
-    for name in ("threshold", "spray_accounts", "lateral_hosts"):
+    for name in ("threshold", "spray_accounts", "lateral_hosts", "procesos", "limite_html"):
         if getattr(args, name) < 1:
             print(f"error: --{name.replace('_', '-')} debe ser al menos 1", file=sys.stderr)
             return 2
@@ -310,8 +316,13 @@ def _analyze(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        loaded = load_events(args.paths)
-    except (FileNotFoundError, PermissionError) as exc:
+        ahora = datetime.now(timezone.utc)
+        desde = limite_temporal(args.desde, ahora) if args.desde else None
+        hasta = limite_temporal(args.hasta, ahora) if args.hasta else None
+        plan = None if args.todos_los_eventos else planificar(r for r in RULES if not only or r.id in only)
+        loaded = load_events(args.paths, plan=plan, procesos=args.procesos, desde=desde, hasta=hasta,
+                             progreso=args.progreso or sys.stderr.isatty(), estadisticas=True)
+    except (FileNotFoundError, PermissionError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if not loaded.events and loaded.warnings:
@@ -336,6 +347,7 @@ def _analyze(args: argparse.Namespace) -> int:
         first_event=loaded.events[0].timestamp if loaded.events else None,
         last_event=loaded.events[-1].timestamp if loaded.events else None,
         warnings=loaded.warnings,
+        leidos=loaded.leidos, descartados=loaded.descartados, segundos=loaded.segundos,
     )
 
     fmt = args.format or (_EXTENSION_FORMAT.get(args.output.suffix.lower(), "console") if args.output else "console")
@@ -348,6 +360,8 @@ def _analyze(args: argparse.Namespace) -> int:
             and _enable_ansi()
         )
         text = render_console(findings, stats, color=color)
+    elif fmt == "html":
+        text = RENDERERS[fmt](findings, stats, limite_por_regla=args.limite_html)
     else:
         text = RENDERERS[fmt](findings, stats)
 

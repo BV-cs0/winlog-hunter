@@ -11,6 +11,8 @@ from __future__ import annotations
 import html
 import json
 import re
+import csv
+import io
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -33,6 +35,13 @@ class Stats:
     first_event: datetime | None = None
     last_event: datetime | None = None
     warnings: list[str] = field(default_factory=list)
+    leidos: int = 0
+    descartados: int = 0
+    segundos: float = 0.0
+
+    @property
+    def velocidad(self):
+        return self.leidos / self.segundos if self.segundos else 0.0
 
 
 def fmt_ts(dt: datetime) -> str:
@@ -74,6 +83,9 @@ def render_console(findings: list[Finding], stats: Stats, color: bool = False) -
         return f"{code}{text}{_RESET}" if color else text
 
     lines = [f"{paint(_BOLD, 'winlog-hunter')} {__version__} · {stats.events} eventos en {stats.files} fichero(s)"]
+    if stats.segundos:
+        lines.append(f"Lectura: {stats.leidos} leídos · {stats.descartados} descartados · "
+                     f"{stats.segundos:.2f} s · {stats.velocidad:.0f} ev/s")
     if stats.first_event and stats.last_event:
         lines.append(f"Periodo: {fmt_ts(stats.first_event)} a {fmt_ts(stats.last_event)}")
     counts = severity_counts(findings)
@@ -88,7 +100,8 @@ def render_console(findings: list[Finding], stats: Stats, color: bool = False) -
 
     for f in findings:
         lines.append("")
-        lines.append(f"{paint(_ANSI[f.severity], f'[{SEVERITY_LABEL[f.severity]}]')} {paint(_BOLD, f.rule_id)} {f.title}")
+        repetido = f" ×{f.veces}" if f.veces > 1 else ""
+        lines.append(f"{paint(_ANSI[f.severity], f'[{SEVERITY_LABEL[f.severity]}]')} {paint(_BOLD, f.rule_id)} {f.title}{repetido}")
         meta = (
             f"{fmt_ts(f.first_seen)} · {_clean(', '.join(f.computers)) or '?'} · "
             f"MITRE {', '.join(f.mitre)} · {f.event_count} evento(s)"
@@ -123,6 +136,10 @@ def render_json(findings: list[Finding], stats: Stats) -> str:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
             "events": stats.events,
+            "eventos_leidos": stats.leidos,
+            "eventos_descartados": stats.descartados,
+            "segundos": stats.segundos,
+            "eventos_por_segundo": stats.velocidad,
             "files": stats.files,
             "first_event": stats.first_event.isoformat() if stats.first_event else None,
             "last_event": stats.last_event.isoformat() if stats.last_event else None,
@@ -132,6 +149,21 @@ def render_json(findings: list[Finding], stats: Stats) -> str:
         "findings": [f.to_dict() for f in findings],
     }
     return json.dumps(document, ensure_ascii=False, indent=2)
+
+
+def render_csv(findings: list[Finding], stats: Stats) -> str:
+    """Exporta todos los hallazgos y evita fórmulas procedentes de los logs."""
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+    writer.writerow(["regla", "título", "severidad", "MITRE", "resumen", "primera_vez",
+                     "última_vez", "equipos", "eventos", "veces", "evidencias"])
+    for f in findings:
+        row = [f.rule_id, f.title, SEVERITY_LABEL[f.severity], ", ".join(f.mitre), f.summary,
+               f.first_seen.isoformat(), f.last_seen.isoformat(), ", ".join(f.computers),
+               str(f.event_count), str(f.veces), json.dumps(f.evidence, ensure_ascii=False)]
+        row = [_clean(value) for value in row]
+        writer.writerow(["'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value for value in row])
+    return stream.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -152,6 +184,9 @@ def render_markdown(findings: list[Finding], stats: Stats) -> str:
         "",
         f"- **Eventos analizados:** {stats.events} en {stats.files} fichero(s)",
     ]
+    if stats.segundos:
+        out.append(f"- **Lectura:** {stats.leidos} leídos, {stats.descartados} descartados, "
+                   f"{stats.segundos:.2f} s ({stats.velocidad:.0f} ev/s)")
     if stats.first_event and stats.last_event:
         out.append(f"- **Periodo:** {fmt_ts(stats.first_event)} a {fmt_ts(stats.last_event)}")
     out.append(f"- **Generado:** {fmt_ts(datetime.now(timezone.utc))} con winlog-hunter {__version__}")
@@ -169,7 +204,7 @@ def render_markdown(findings: list[Finding], stats: Stats) -> str:
             "",
             f"### {i}. [{SEVERITY_LABEL[f.severity]}] {f.rule_id} · {_md(f.title)}",
             "",
-            _md(f.summary),
+            _md(f.summary) + (f" ×{f.veces}" if f.veces > 1 else ""),
             "",
             f"- **MITRE ATT&CK:** {', '.join(f.mitre)}",
             f"- **Ventana:** {fmt_ts(f.first_seen)} a {fmt_ts(f.last_seen)} ({f.event_count} evento(s))",
@@ -235,7 +270,9 @@ _CODE_KEYS = {
 }
 
 
-def render_html(findings: list[Finding], stats: Stats) -> str:
+def render_html(findings: list[Finding], stats: Stats, limite_por_regla: int = 200) -> str:
+    if limite_por_regla < 1:
+        raise ValueError("el límite HTML debe ser al menos 1")
     esc = html.escape
     counts = severity_counts(findings)
     parts = ["<h1>Informe de winlog-hunter</h1>"]
@@ -243,6 +280,9 @@ def render_html(findings: list[Finding], stats: Stats) -> str:
     if stats.first_event and stats.last_event:
         period = f" · {esc(fmt_ts(stats.first_event))} a {esc(fmt_ts(stats.last_event))}"
     parts.append(f'<p class="meta">{stats.events} eventos en {stats.files} fichero(s){period}</p>')
+    if stats.segundos:
+        parts.append(f'<p class="meta">Lectura: {stats.leidos} leídos · {stats.descartados} descartados · '
+                     f'{stats.segundos:.2f} s · {stats.velocidad:.0f} ev/s</p>')
 
     parts.append('<section class="cards">')
     parts.append(f'<div class="card"><b>{len(findings)}</b><span>Hallazgos</span></div>')
@@ -252,10 +292,17 @@ def render_html(findings: list[Finding], stats: Stats) -> str:
 
     if not findings:
         parts.append('<p class="empty">Sin hallazgos con los filtros actuales.</p>')
+    mostrados = {}
+    omitidos = {}
     for f in findings:
+        mostrados[f.rule_id] = mostrados.get(f.rule_id, 0) + 1
+        if mostrados[f.rule_id] > limite_por_regla:
+            omitidos[f.rule_id] = omitidos.get(f.rule_id, 0) + 1
+            continue
         parts.append(f'<article class="finding" style="--sev:var(--{f.severity})">')
         parts.append(
-            f'<h2><span class="badge">{SEVERITY_LABEL[f.severity]}</span>{esc(f.rule_id)} · {esc(f.title)}</h2>'
+            f'<h2><span class="badge">{SEVERITY_LABEL[f.severity]}</span>{esc(f.rule_id)} · {esc(f.title)}'
+            f'{f" ×{f.veces}" if f.veces > 1 else ""}</h2>'
         )
         parts.append(
             f'<p class="sub">{esc(fmt_ts(f.first_seen))} · {esc(", ".join(f.computers) or "?")} · '
@@ -269,6 +316,8 @@ def render_html(findings: list[Finding], stats: Stats) -> str:
             parts.append(f"<dt>{esc(_label(key))}</dt><dd>{text}</dd>")
         parts.append("</dl></article>")
 
+    for rule_id, total in sorted(omitidos.items()):
+        parts.append(f"<p>{esc(rule_id)}: y {total} más. El informe JSON contiene todos los hallazgos.</p>")
     if stats.warnings:
         parts.append(f"<h2>Avisos de lectura ({len(stats.warnings)})</h2><ul>")
         parts += [f"<li>{esc(w)}</li>" for w in stats.warnings[:100]]
@@ -279,6 +328,7 @@ def render_html(findings: list[Finding], stats: Stats) -> str:
 
 RENDERERS = {
     "json": render_json,
+    "csv": render_csv,
     "markdown": render_markdown,
     "html": render_html,
 }

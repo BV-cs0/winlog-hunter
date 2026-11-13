@@ -199,6 +199,123 @@ winlog-hunter programar --quitar        # eliminarlo
 - Si el equipo está apagado a la hora programada, se ejecuta al encenderlo.
 - Al actualizar winlog-hunter con pip, la tarea usa la versión nueva sin volver a programarla.
 
+## Rendimiento
+
+Medido el 2026-11-13 en Windows, Python 3.10 independiente, con
+`tools/benchmark_rendimiento.py`. El «antes» se ejecutó con una copia del código
+anterior a esta fase en `.medidas/codigo-antes`; el «después», con el código actual.
+Son ejecuciones individuales, con un proceso de lectura. Los EVTX se exportaron
+del equipo con `wevtutil epl`; el JSONL tiene 2 millones de eventos (90 % de ruido,
+10 % de eventos consumidos por reglas, incluidas 20 instalaciones repetidas).
+
+| Entrada | Eventos | Antes ev/s | Después ev/s | Antes RAM MiB | Después RAM MiB |
+|---|---:|---:|---:|---:|---:|
+| Application.evtx | 20 933 | 9 459 | 196 160 | 320.5 | 33.7 |
+| System.evtx | 38 658 | 12 845 | 121 461 | 388.0 | 34.2 |
+| sintetico-2000000.jsonl | 2 000 000 | 75 619 | 98 223 | 2 749.5 | 202.3 |
+
+Con las reglas incluidas, el sintético se analiza entero a 82 788 eventos por
+segundo: las 36 reglas tardan unos 3,4 s sobre los 200 000 eventos útiles. Cada
+`.evtx` se lee en una sola pasada de `wevtutil` con una consulta estructurada
+(varios `<Select>` de hasta 23 comparaciones cada uno). Con muchos ficheros
+pequeños domina el arranque de procesos: las 278 muestras de EVTX-ATTACK-SAMPLES
+juntas van a unos 2 000 eventos por segundo con `analyze`.
+
+La velocidad corresponde a lectura, selección y ordenación, sobre el total de
+registros del fichero, incluidos los descartados nativamente. La herramienta
+también imprime velocidad total con reglas y guarda ambos tiempos en JSON.
+La RAM es la suma conservadora de `PeakWorkingSetSize` de cada proceso observado
+con `GetProcessMemoryInfo`, incluidos los workers y `wevtutil`, con muestreo cada
+20 ms. También guarda el máximo simultáneo observado. La suma de picos puede
+superar el máximo simultáneo y cuenta páginas compartidas en varios procesos.
+
+La referencia anterior del plan era Application 1.240 ev/s y 363 MB, y System
+2.455 ev/s y 471 MB. La tabla recoge la repetición con el mismo protocolo del
+benchmark nuevo; esas velocidades iniciales del plan no se reprodujeron en esta
+sesión. No se ha medido un EVTX de 1 GB: el objetivo de RAM para ese tamaño queda
+pendiente de una muestra real. El sintético de 2 millones sí queda por debajo de
+1,5 GB, reteniendo solo 200.000 eventos útiles.
+
+### Uso y límites
+
+```powershell
+winlog-hunter analyze logs --procesos 4 --desde 7d --hasta 24h --progreso -o informe.html
+winlog-hunter analyze Security.evtx --todos-los-eventos --procesos 1 -o informe-completo.json
+winlog-hunter analyze logs --limite-html 100 -o informe.html
+winlog-hunter analyze logs -o informe.csv
+```
+
+`--desde` y `--hasta` aceptan fechas ISO o distancias hacia atrás (`24h`, `7d`),
+con límites inclusivos. En Windows se convierten a UTC con `Z` en la XPath.
+`equipo --horas` usa el mismo constructor temporal para exportar los registros.
+`--todos-los-eventos` conserva todos los eventos de entrada durante la carga;
+el informe JSON sigue siendo un informe de hallazgos, no una exportación de eventos.
+
+La CLI usa por defecto `os.cpu_count()` procesos; `--procesos 1` desactiva el pool.
+Se limita el número de workers al de ficheros y al máximo de 61 de Windows.
+La API `load_events` conserva el modo secuencial y la lectura completa por defecto;
+para aplicar la selección se pasa `plan=planificar()`. Cada worker devuelve eventos
+ya filtrados; las correlaciones se ejecutan juntas, ordenadas, en el proceso principal.
+Los empates temporales conservan el orden de ficheros y de registros.
+
+El progreso se escribe en stderr, automáticamente si es una terminal, al terminar
+cada fichero y cada 100.000 registros examinados en Python. Las estadísticas incluyen
+registros leídos, descartados, segundos y velocidad. Para EVTX, el total incluye los
+descartados por Windows y se obtiene de `wevtutil gli`; no todos se convierten a XML.
+
+El límite XPath se comprobó contra estos EVTX: **23 comparaciones `EventID=…`
+funcionan; 24 devuelven 15001** («La consulta especificada no es válida»).
+Con dos cotas temporales funcionan 21 IDs y falla con 22. Se trocea la unión en
+consultas disjuntas, reservando una comparación por cota; si Windows rechaza una
+consulta se avisa y se filtra en Python. `/uni:true` fija UTF-16LE y permite decodificar
+incrementalmente sin adivinar la página ANSI. Los nodos XML se retiran del padre
+y se liberan al terminar cada evento; los XML con DOCTYPE se rechazan, incluida
+una declaración tardía o dividida entre fragmentos. JSONL se lee por líneas; un JSON
+en array se carga entero y avisa cuando supera 200 MB.
+
+La memoria crece con los eventos relevantes para correlación. Una entrada donde
+todos los registros sean relevantes seguirá necesitando memoria proporcional a ellos.
+WLH-006 y WLH-007 agrupan instalaciones idénticas por servicio/ruta/cuenta y
+tarea/acción/usuario, respectivamente, manteniendo severidad, equipo, MITRE,
+`veces`, `first_seen`, `last_seen` y el total de eventos. Los informes muestran `×N`.
+El HTML muestra como máximo 200 hallazgos por regla (`--limite-html`) e indica
+«y X más»; JSON y CSV contienen todos los hallazgos agrupados.
+
+### Paralelismo y troceo por EventRecordID
+
+| Log | Workers por rango | ev/s | Pico RAM árbol MiB |
+|---|---:|---:|---:|
+| Application.evtx | 1 | 51897 | 71.2 |
+| Application.evtx | 2 | 22260 | 140.2 |
+| Application.evtx | 4 | 19315 | 249.6 |
+| System.evtx | 1 | 42276 | 78.5 |
+| System.evtx | 2 | 26385 | 156.5 |
+| System.evtx | 4 | 25435 | 268.2 |
+
+El troceo automático de un EVTX no se activa: en los dos ficheros disponibles
+(21 MB) empeoró el tiempo y la memoria. No había una muestra real de más de
+256 MB para validar que compense a ese tamaño. El benchmark ofrece
+`--troceos-experimentales N` para repetir la prueba, obteniendo el primer ID con
+`gli` y el último con una consulta inversa (el número de registros no garantiza
+el último ID si hay huecos). La prueba local también comprobó que los hallazgos
+coincidían al usar 1, 2 y 4 rangos. El paralelismo entre ficheros sí está disponible.
+
+Leyendo ambos EVTX en una misma ejecución (59.591 eventos), 1 proceso(s): 48974 ev/s y 128.8 MiB; 2 proceso(s): 41163 ev/s y 166.5 MiB. Con estos ficheros pequeños el coste del pool pesa en el resultado.
+
+Para reproducir las mediciones desde el repositorio:
+
+```powershell
+D:\Claude\winlog-hunter\.python\python.exe tools/benchmark_rendimiento.py .medidas/Application.evtx .medidas/System.evtx --eventos 2000000 --json .medidas/rendimiento-despues.json
+D:\Claude\winlog-hunter\.python\python.exe tools/benchmark_rendimiento.py .medidas/Application.evtx .medidas/System.evtx --eventos 2000000 --codigo .medidas/codigo-antes --json .medidas/rendimiento-antes.json
+D:\Claude\winlog-hunter\.python\python.exe tools/benchmark_rendimiento.py .medidas/Application.evtx .medidas/System.evtx --troceos-experimentales 4 --json .medidas/troceo-4.json
+```
+
+El benchmark de detección conserva **180/278**, con JSON idéntico byte a byte
+a `.medidas/deteccion-antes.json` (SHA-256
+`a87d48ea18f1dbd83702acf74bfcff6268c97cac1235343d64bf14e356edd80f`).
+Con `--min-severity medium` se mantienen **156/278**. Pasan los **151 tests** de unittest.
+Las mediciones y las muestras permanecen en `.medidas`, fuera de git.
+
 ## Reglas Sigma
 
 La carpeta [`sigma/`](sigma/) contiene las 36 detecciones en formato Sigma. Algunas incluyen varios documentos y correlaciones; el backend debe adaptar los campos y las limitaciones indicadas en cada fichero. Los tests comprueban la correspondencia de IDs y los campos obligatorios; eso no sustituye validar la conversión para tu SIEM (Splunk, Elastic, Microsoft Sentinel, QRadar...):

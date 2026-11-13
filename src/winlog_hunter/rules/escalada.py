@@ -26,7 +26,9 @@ _MOCK_WINDOWS = re.compile(r"^[a-z]:\\windows +\\(?:system32|syswow64)\\", re.I)
 
 
 @rule("WLH-022", "Posible bypass de UAC", "high", ["T1548.002"],
-      "Secuestros por usuario, hijos sospechosos, DLL y ficheros en rutas de autoelevables.")
+      "Secuestros por usuario, hijos sospechosos, DLL y ficheros en rutas de autoelevables.", eventos={1, 7, 11, 12, 13, 4688},
+    agrupar_por=('indicador', 'proceso', 'proceso_padre', 'clave', 'valor', 'fichero', 'línea_de_comandos'),
+)
 def uac_bypass(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         if not _is_sysmon(e):
@@ -74,7 +76,7 @@ def uac_bypass(events: list[Event], cfg: Config) -> Iterator[Hit]:
 
 
 @rule("WLH-034", "Privilegios y ajustes peligrosos del sistema", "medium", ["T1134", "T1553.006", "T1562"],
-      "Privilegios sensibles fuera de procesos habituales, arranque inseguro, retirada de auditoría o parada de EventLog.")
+      "Privilegios sensibles fuera de procesos habituales, arranque inseguro, retirada de auditoría o parada de EventLog.", eventos={7040, 4673, 4719, 4985, 4826, 7036, 25, 4703})
 def system_privileges(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         security = e.channel.lower() == "security" or "security-auditing" in e.provider.lower()

@@ -6,6 +6,7 @@ import re
 import ntpath
 import ipaddress
 from urllib.parse import urlsplit
+from functools import lru_cache
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
@@ -27,8 +28,16 @@ _SYSTEM_NAMES = {"svchost.exe", "lsass.exe", "services.exe", "csrss.exe", "winlo
 _ACCESSIBILITY = {"sethc.exe", "osk.exe", "utilman.exe", "magnify.exe", "narrator.exe"}
 
 
+@lru_cache(maxsize=8192)
+def _ruta_disfraz(image: str) -> str:
+    """Normaliza rutas repetidas sin conservar eventos ni datos de instancia."""
+    return ntpath.normpath(image.strip('"')).lower()
+
+
 @rule("WLH-023", "Binario renombrado o disfrazado", "medium", ["T1036.003", "T1036.005"],
-      "Nombre original de una utilidad conocida distinto del ejecutable, o proceso de sistema fuera de su ruta.")
+      "Nombre original de una utilidad conocida distinto del ejecutable, o proceso de sistema fuera de su ruta.", eventos={4688, 1},
+    agrupar_por=('indicador', 'proceso', 'nombre_original', 'usuario', 'línea_de_comandos'),
+)
 def masquerading(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
         name = _exe(p.image)
@@ -40,7 +49,7 @@ def masquerading(events: list[Event], cfg: Config) -> Iterator[Hit]:
             reason = "nombre distinto al OriginalFileName de una utilidad conocida"
             if name in _ACCESSIBILITY and original in {"cmd.exe", "powershell.exe", "pwsh.exe"}:
                 reason, severity = "binario de accesibilidad sustituido por una shell", "high"
-        path = ntpath.normpath(p.image.strip('"')).lower()
+        path = _ruta_disfraz(p.image)
         misplaced = name in _SYSTEM_NAMES and not _windows_path(path)
         misplaced |= name == "explorer.exe" and not bool(re.fullmatch(r"[a-z]:\\windows\\explorer\.exe", path)) and not _windows_path(path, ("syswow64", "winsxs"))
         if misplaced:
@@ -74,7 +83,9 @@ def _command_target(image: str, command: str) -> tuple[str, str]:
 
 @rule("WLH-025", "Evasión e inhibición de recuperación por comandos", "high",
       ["T1490", "T1562.001", "T1562.004", "T1564.001", "T1070"],
-      "Borrado de copias, desactivación de auditoría o defensas, ocultación y parada de EventLog.")
+      "Borrado de copias, desactivación de auditoría o defensas, ocultación y parada de EventLog.", eventos={4688, 1},
+    agrupar_por=('indicador', 'proceso', 'usuario', 'línea_de_comandos', 'comando_de_eventlog'),
+)
 def defense_commands(events: list[Event], cfg: Config) -> Iterator[Hit]:
     processes = list(_processes(events))
     for p in processes:
@@ -150,7 +161,9 @@ def _defense_owner(image: str) -> bool:
 
 
 @rule("WLH-029", "Desactivación de defensas en el registro", "high", ["T1562.001", "T1112"],
-      "Sysmon 12/13: valores que debilitan UAC, auditoría PowerShell, Defender, LSA, firewall o seguridad de Office.")
+      "Sysmon 12/13: valores que debilitan UAC, auditoría PowerShell, Defender, LSA, firewall o seguridad de Office.", eventos={12, 13},
+    agrupar_por=('clave', 'valor', 'proceso', 'operación', 'indicador'),
+)
 def registry_defenses(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         if e.event_id not in (12, 13) or not _is_sysmon(e):
@@ -210,6 +223,7 @@ def registry_defenses(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1685.005"],
     "Se vació el registro de seguridad (1102) u otro registro (104): típico para borrar huellas.",
+    eventos={104, 1102},
 )
 def log_cleared(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -243,7 +257,7 @@ def _external_url(value: str) -> bool:
 
 
 @rule("WLH-036", "Alertas de Defender y trabajos BITS sospechosos", "high", ["T1562.001", "T1197"],
-      "Detecciones de malware y desactivación de Defender; descargas BITS externas fuera del mantenimiento habitual.")
+      "Detecciones de malware y desactivación de Defender; descargas BITS externas fuera del mantenimiento habitual.", eventos={3, 5001, 1006, 5007, 60, 1015, 59, 1116, 1117})
 def defender_bits(events: list[Event], cfg: Config) -> Iterator[Hit]:
     jobs: dict[tuple[str, str], str] = {}
     for e in events:

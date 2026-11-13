@@ -14,6 +14,8 @@ import ntpath
 import re
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
+from heapq import merge
+from functools import cached_property, lru_cache
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import PureWindowsPath
@@ -49,17 +51,85 @@ class Rule:
     mitre: tuple[str, ...]
     description: str
     func: Callable[[list[Event], Config], Iterable[Hit]]
+    eventos: frozenset = frozenset()
+    filtro: Callable[[Event], bool] | None = None
+    agrupar_por: tuple[str, ...] | None = None
+
+    def acepta(self, e: Event) -> bool:
+        return (e.event_id in self.eventos or (e.channel.lower(), e.event_id) in self.eventos) and (
+            self.filtro is None or self.filtro(e))
 
 
 RULES: list[Rule] = []
 
 
-def rule(id: str, title: str, severity: str, mitre: list[str], description: str):
+def rule(id: str, title: str, severity: str, mitre: list[str], description: str,
+         *, eventos=(), filtro=None, agrupar_por=None):
     def decorator(func):
-        RULES.append(Rule(id, title, severity, tuple(mitre), description, func))
+        seleccion = frozenset((x[0].lower(), x[1]) if isinstance(x, tuple) else x for x in eventos)
+        RULES.append(Rule(id, title, severity, tuple(mitre), description, func,
+                          seleccion, filtro, tuple(agrupar_por) if agrupar_por is not None else None))
         return func
 
     return decorator
+
+
+@dataclass
+class Plan:
+    """Selección serializable que comparten los loaders y los workers."""
+    reglas: tuple[Rule, ...]
+
+    @cached_property
+    def ids(self):
+        return {x[1] if isinstance(x, tuple) else x for r in self.reglas for x in r.eventos}
+
+    def acepta(self, e: Event) -> bool:
+        return any(r.acepta(e) for r in self.por_id.get(e.event_id, ()))
+
+    @cached_property
+    def por_id(self):
+        indice = defaultdict(list)
+        for r in self.reglas:
+            for i in {x[1] if isinstance(x, tuple) else x for x in r.eventos}:
+                indice[i].append(r)
+        return dict(indice)
+
+
+def planificar(reglas=None) -> Plan:
+    """Calcula la unión de los eventos pedidos por las reglas seleccionadas."""
+    return Plan(tuple(RULES if reglas is None else reglas))
+
+
+class _EventosRegla(list):
+    """Lista normal con normalización de procesos compartida solo durante este análisis."""
+    __slots__ = ("cache_procesos", "clave_procesos")
+
+
+_CAMPOS_DE_INSTANCIA = frozenset({
+    "processid", "newprocessid", "parentprocessid", "processguid", "parentprocessguid",
+    "logonid", "logonguid", "subjectlogonid", "targetlogonid", "eventrecordid",
+    "recordid", "recordnumber", "utctime", "timestamp", "timecreated", "systemtime",
+})
+
+
+def _congelar(value):
+    """Clave estable que conserva todos los valores de las evidencias."""
+    if isinstance(value, dict):
+        return tuple(sorted((k, _congelar(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_congelar(v) for v in value)
+    return value
+
+
+def _contexto_repetidos(events):
+    """Compara los campos completos, incluidos sufijos truncados en el informe.
+
+    Omite fechas, PID y GUID de instancia: cambian al repetir la misma acción.
+    La evidencia y el resumen se comparan además, para no ocultar diferencias.
+    """
+    return tuple(sorted({(e.event_id, e.channel, e.provider,
+                          tuple(sorted((k, v) for k, v in e.data.items()
+                                       if k.lower() not in _CAMPOS_DE_INSTANCIA))) for e in events}))
 
 
 def run_rules(
@@ -67,14 +137,33 @@ def run_rules(
 ) -> list[Finding]:
     config = config or Config()
     ordered = sorted(events, key=lambda e: e.timestamp)
+    indice = defaultdict(list)
+    for pos, e in enumerate(ordered):
+        indice[e.event_id].append((pos, e))
     findings: list[Finding] = []
+    cache_procesos = {}
+    selecciones = {}
     for r in RULES:
         if only and r.id not in only:
             continue
-        for hit in r.func(ordered, config):
+        ids = {x[1] if isinstance(x, tuple) else x for x in r.eventos}
+        clave_seleccion = (r.eventos, id(r.filtro))
+        propios = selecciones.get(clave_seleccion)
+        if propios is None:
+            seleccion = merge(*(indice[i] for i in ids), key=lambda item: item[0])
+            # El índice ya garantiza el event_id: acepta() solo hace falta si la regla
+            # restringe por canal o tiene un filtro propio.
+            if r.filtro is None and not any(isinstance(x, tuple) for x in r.eventos):
+                propios = _EventosRegla(e for _, e in seleccion)
+            else:
+                propios = _EventosRegla(e for _, e in seleccion if r.acepta(e))
+            propios.cache_procesos = cache_procesos
+            propios.clave_procesos = (frozenset(x for x in r.eventos if (x[1] if isinstance(x, tuple) else x) in (1, 4688)), id(r.filtro))
+            selecciones[clave_seleccion] = propios
+        agrupados = {}
+        for hit in r.func(propios, config):
             evs = hit.events
-            findings.append(
-                Finding(
+            finding = Finding(
                     rule_id=r.id,
                     title=r.title,
                     severity=hit.severity or r.severity,
@@ -86,7 +175,19 @@ def run_rules(
                     evidence={k: v for k, v in hit.evidence.items() if v not in ("", None, [], {})},
                     event_count=len(evs),
                 )
-            )
+            if r.agrupar_por is not None:
+                clave = (finding.severity, tuple(finding.computers), tuple(finding.mitre),
+                         tuple(_congelar(finding.evidence.get(k)) for k in r.agrupar_por),
+                         finding.summary, _congelar(finding.evidence), _contexto_repetidos(evs))
+                anterior = agrupados.get(clave)
+                if anterior is not None:
+                    anterior.veces += 1
+                    anterior.event_count += finding.event_count
+                    anterior.first_seen = min(anterior.first_seen, finding.first_seen)
+                    anterior.last_seen = max(anterior.last_seen, finding.last_seen)
+                    continue
+                agrupados[clave] = finding
+            findings.append(finding)
     findings.sort(key=lambda f: (-f.rank, f.first_seen, f.rule_id))
     return findings
 
@@ -283,6 +384,7 @@ def _privileged_group(e: Event) -> tuple[bool, bool]:
 
 @dataclass
 class _Process:
+    __slots__ = ("event", "image", "command_line", "parent", "user")
     event: Event
     image: str
     command_line: str
@@ -291,6 +393,12 @@ class _Process:
 
 
 def _processes(events: list[Event]) -> Iterator[_Process]:
+    if isinstance(events, _EventosRegla):
+        key = events.clave_procesos
+        if key not in events.cache_procesos:
+            events.cache_procesos[key] = list(_processes(list(events)))
+        yield from events.cache_procesos[key]
+        return
     for e in events:
         if e.event_id == 1 and ("sysmon" in e.channel.lower() or "sysmon" in e.provider.lower() or "Image" in e.data):
             yield _Process(e, e.get("Image"), e.get("CommandLine"), e.get("ParentImage"), e.get("User"))
@@ -300,6 +408,7 @@ def _processes(events: list[Event]) -> Iterator[_Process]:
             )
 
 
+@lru_cache(maxsize=8192)
 def _exe(path: str) -> str:
     return PureWindowsPath(path).name.lower() if path else ""
 

@@ -38,6 +38,7 @@ def _normal_module_path(value: str) -> bool:
     "high",
     ["T1543.003"],
     "Evento 7045. Alta si el servicio ejecuta algo sospechoso o es de ejecución remota (PsExec); baja en otro caso.",
+    eventos={7045}, agrupar_por=("servicio", "ruta", "cuenta"),
 )
 def service_installed(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -73,6 +74,7 @@ def service_installed(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1053.005"],
     "Evento 4698. Alta si la tarea lanza PowerShell, scripts o rutas sospechosas; baja en otro caso.",
+    eventos={4698}, agrupar_por=("tarea", "acción", "usuario"),
 )
 def scheduled_task(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -102,6 +104,7 @@ def scheduled_task(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "medium",
     ["T1136"],
     "Evento 4720: se creó una cuenta nueva. Revisa si estaba planificada.",
+    eventos={4720},
 )
 def user_created(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -121,6 +124,7 @@ def user_created(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1098"],
     "Eventos 4728/4732/4756 sobre grupos como Administradores o Admins. del dominio (detectados por SID).",
+    eventos={4728, 4756, 4732},
 )
 def privileged_group_add(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -151,6 +155,8 @@ def privileged_group_add(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1547.001"],
     "Sysmon 13: se escribe en claves de arranque (Run, Winlogon, IFEO, AppInit, LSA, COM...) desde un proceso que no es un instalador.",
+    eventos={1, 12, 13, 14, 4688},
+    agrupar_por=('clave', 'valor', 'proceso', 'indicador', 'proceso_padre', 'línea_de_comandos'),
 )
 def registry_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -216,6 +222,7 @@ def registry_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1546.003"],
     "Sysmon 19/20/21: se crea un filtro, consumidor o enlace de eventos WMI que ejecuta algo de forma permanente.",
+    eventos={19, 20, 21},
 )
 def wmi_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[str, list[Event]] = defaultdict(list)
@@ -258,7 +265,7 @@ def _routine_file_writer(image: str) -> bool:
 
 
 @rule("WLH-030", "Ficheros sospechosos", "medium", ["T1547.001", "T1003", "T1574.001", "T1574.009", "T1070.006"],
-      "Sysmon 11/2: inicio, volcados de LSASS, memssp, rutas ambiguas de servicio, spooler y cambios de fecha hacia el pasado.")
+      "Sysmon 11/2: inicio, volcados de LSASS, memssp, rutas ambiguas de servicio, spooler y cambios de fecha hacia el pasado.", eventos={2, 11})
 def suspicious_files(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
         if e.event_id not in (2, 11) or not _is_sysmon(e):
@@ -299,7 +306,7 @@ def suspicious_files(events: list[Event], cfg: Config) -> Iterator[Hit]:
 
 
 @rule("WLH-033", "Cambios peligrosos en Active Directory", "high", ["T1098", "T1207", "T1134.005", "T1222.001"],
-      "Derechos de replicación, delegación, credenciales alternativas, SID History, DSRM y cuentas de equipo atípicas.")
+      "Derechos de replicación, delegación, credenciales alternativas, SID History, DSRM y cuentas de equipo atípicas.", eventos={4742, 5136, 4756, 4724, 4728, 4794, 4732, 4765, 4766})
 def dangerous_ad_changes(events: list[Event], cfg: Config) -> Iterator[Hit]:
     privileged: set[str] = set()
     for e in events:

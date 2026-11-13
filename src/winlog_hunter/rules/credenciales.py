@@ -12,6 +12,7 @@ from .base import (AccountKey, Any, Config, Event, Hit, Iterator, UNKNOWN, _DUMP
     "high",
     ["T1110.001"],
     "Muchos fallos 4625 o MSSQL 18456 contra la misma cuenta y desde el mismo origen en poco tiempo.",
+    eventos={18456, 4625},
 )
 def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for (_, _, _, source), evs in _failed_logons(events).items():
@@ -47,6 +48,7 @@ def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1110.003"],
     "Un mismo origen falla contra muchas cuentas: 4625 o Kerberos 4768/4771 con errores de credenciales.",
+    eventos={4768, 4625, 4771},
 )
 def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[str, list[Event]] = defaultdict(list)
@@ -86,6 +88,7 @@ def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1110", "T1078"],
     "Un 4624 llega justo después de una ráfaga de 4625 para la misma cuenta y origen: probable credencial comprometida.",
+    eventos={4624, 4625},
 )
 def success_after_failures(events: list[Event], cfg: Config) -> Iterator[Hit]:
     failures = _failed_logons(events)
@@ -125,6 +128,7 @@ def success_after_failures(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1003.001"],
     "Sysmon 10: un proceso abre lsass.exe con permiso de lectura de memoria. Así roban contraseñas Mimikatz, procdump o comsvcs.",
+    eventos={10},
 )
 def lsass_access(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
@@ -163,6 +167,7 @@ def lsass_access(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1003"],
     "Comandos de volcado en Sysmon 1/4688, monitor de salida de LSASS 3001 y copias de ntds.dit en ESENT 325-327.",
+    eventos={1, 325, 326, 327, 4688, 3001},
 )
 def credential_dump_command(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
@@ -207,7 +212,7 @@ def _anonymous(e: Event, prefix: str) -> bool:
 
 
 @rule("WLH-032", "Indicios de ataques a Kerberos y NTLM", "medium", ["T1558.004", "T1550.002", "T1210"],
-      "AS-REP sin preautenticación, logon NTLM atípico y correlación de acceso anónimo con cambio de la cuenta del DC.")
+      "AS-REP sin preautenticación, logon NTLM atípico y correlación de acceso anónimo con cambio de la cuenta del DC.", eventos={4768, 4624, 4742})
 def kerberos_ntlm(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str, str, str, str], list[Event]] = defaultdict(list)
     anonymous: dict[tuple[str, str], list[Event]] = defaultdict(list)
@@ -255,6 +260,7 @@ def kerberos_ntlm(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1003.006"],
     "Evento 4662 con derechos de replicación de AD pedidos por una cuenta que no es un controlador de dominio.",
+    eventos={4662},
 )
 def dcsync(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str], list[Event]] = defaultdict(list)
@@ -286,6 +292,7 @@ def dcsync(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1558.003"],
     "Eventos 4769 pidiendo tickets de servicio con cifrado RC4 (0x17) para cuentas de usuario: típico de Rubeus o GetUserSPNs.",
+    eventos={4769},
 )
 def kerberoasting(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[str, list[Event]] = defaultdict(list)

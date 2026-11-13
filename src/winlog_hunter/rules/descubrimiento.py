@@ -14,7 +14,7 @@ _ENUM_PIPES = {"srvsvc", "samr", "lsarpc", "winreg", "wkssvc"}
 
 
 @rule("WLH-035", "Reconocimiento de cuentas, grupos y equipos", "medium", ["T1087", "T1069", "T1135", "T1018"],
-      "Consultas de grupos por procesos no habituales, enumeración RPC de varios canales y ráfagas de comandos de dominio.")
+      "Consultas de grupos por procesos no habituales, enumeración RPC de varios canales y ráfagas de comandos de dominio.", eventos={1, 4688, 4661, 5145, 4798, 4799})
 def reconnaissance(events: list[Event], cfg: Config) -> Iterator[Hit]:
     pipes: dict[tuple[str, str, str], list[Event]] = defaultdict(list)
     queries: dict[tuple[str, str], list[Event]] = defaultdict(list)

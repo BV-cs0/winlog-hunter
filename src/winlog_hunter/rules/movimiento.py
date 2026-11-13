@@ -14,6 +14,7 @@ from .base import _is_sysmon, _windows_path
     "high",
     ["T1021"],
     "La misma cuenta inicia sesión por red o RDP (tipos 3/10) en varios equipos desde un mismo origen en poco tiempo.",
+    eventos={4624},
 )
 def lateral_movement(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str], list[Event]] = defaultdict(list)
@@ -46,6 +47,7 @@ def lateral_movement(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1021.002"],
     "Evento 5145: acceso remoto a los canales de servicios, tareas o PsExec, o un ejecutable copiado a ADMIN$/C$.",
+    eventos={5145},
 )
 def smb_remote_exec(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str, str], list[Event]] = defaultdict(list)
@@ -90,6 +92,8 @@ def smb_remote_exec(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1047", "T1021.006"],
     "WMI o WinRM abren cmd o PowerShell: así ejecutan comandos wmiexec, Invoke-Command o winrs.",
+    eventos={4688, 1},
+    agrupar_por=('vía', 'proceso_padre', 'proceso_hijo', 'línea_de_comandos', 'usuario'),
 )
 def remote_service_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
@@ -131,7 +135,9 @@ _PIPE_ECHO = re.compile(r'/[ck]\s+echo\s+[^>\r\n]+>\s*"?\\\\\.\\pipe\\[^\s"]+', 
 
 
 @rule("WLH-028", "Named pipes de herramientas ofensivas", "high", ["T1021.002", "T1559", "T1134"],
-      "Sysmon 17/18 y creación de pipes con cmd: canales conocidos de ejecución remota y suplantación.")
+      "Sysmon 17/18 y creación de pipes con cmd: canales conocidos de ejecución remota y suplantación.", eventos={17, 18, 7045, 1},
+    agrupar_por=('pipe', 'proceso', 'indicador', 'línea_de_comandos', 'servicio'),
+)
 def offensive_pipes(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str, str, str], list[Event]] = defaultdict(list)
     labels: dict[tuple[str, str, str, str], tuple[str, str]] = {}
@@ -174,8 +180,13 @@ _RDP_CLIENTS = {"mstsc.exe", "svchost.exe", "msrdc.exe", "rdcman.exe", "mremoten
 _SSH_CLIENTS = {"ssh.exe", "plink.exe", "putty.exe"}
 
 
+def _filtro_red(e: Event) -> bool:
+    """WFP solo aporta detecciones RDP; Sysmon conserva todas sus conexiones."""
+    return e.event_id != 5156 or e.get("DestinationPort", "DestPort") == "3389"
+
+
 @rule("WLH-031", "Conexiones de red de shells y LOLBins", "medium", ["T1059", "T1105", "T1572"],
-      "Sysmon 3: conexiones salientes públicas de intérpretes y LOLBins; acceso RDP por procesos inesperados, también 5156 local.")
+      "Sysmon 3: conexiones salientes públicas de intérpretes y LOLBins; acceso RDP por procesos inesperados, también 5156 local.", eventos={3, 5156}, filtro=_filtro_red)
 def shell_network(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[tuple[str, str, str, str, str, str], list[Event]] = defaultdict(list)
     for e in events:

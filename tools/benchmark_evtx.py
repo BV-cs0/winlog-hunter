@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from winlog_hunter.parsers import load_events  # noqa: E402
-from winlog_hunter.rules import run_rules  # noqa: E402
+from winlog_hunter.rules import run_rules, planificar  # noqa: E402
 from winlog_hunter.models import SEVERITY_ORDER  # noqa: E402
 
 IGNORED = {"WLH-005"}
@@ -61,7 +61,7 @@ def main() -> int:
     for path in files:
         rel = path.relative_to(args.dataset).as_posix()
         try:
-            events = load_events([path]).events
+            events = load_events([path], plan=planificar()).events
             rules = sorted({f.rule_id for f in run_rules(events) if f.rank >= SEVERITY_ORDER[args.min_severity]})
         except Exception as exc:  # un fichero roto no debe parar la medición
             print(f"aviso: {rel}: {exc}", file=sys.stderr)
