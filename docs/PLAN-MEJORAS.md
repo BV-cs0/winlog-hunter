@@ -139,6 +139,63 @@ Numeración: nuevas desde **WLH-022**. Lo que encaje en una regla existente se a
 - Tests: validación (cada error), cada criterio, combinación Y/O, comodines, caducidad, `severidad_maxima`, y que `equipo`/`programar` cogen el fichero por defecto (con ruta inyectable para el test).
 - README: sección "Falsos positivos y exclusiones" con el formato y un ejemplo realista breve.
 
+## Fase 1d: gran volumen (millones de eventos)
+
+### Diagnóstico (medido el 2026-11-13 en el PC de Bryan, Python 3.10)
+
+| Log | Tamaño | Eventos | Parseo | Reglas | Pico de RAM |
+|---|---:|---:|---:|---:|---:|
+| Application.evtx | 21 MB | 20.933 | 16,9 s (1.240 ev/s) | 1,3 s | 363 MB |
+| System.evtx | 21 MB | 38.658 | 15,7 s (2.455 ev/s) | 0,4 s | 471 MB |
+
+Extrapolado, un `Security.evtx` de 1 GB (~1-2 M eventos) necesitaría unos 20 GB de RAM y más de 10 minutos. Las causas, en `parsers.py`:
+
+1. `_wevtutil_xml` lee **toda** la salida de `wevtutil` en memoria y `ET.fromstring` construye **todo** el árbol XML de golpe.
+2. Se crea un `Event` (con su dict) para **todos** los eventos, aunque ninguna regla los use. La mayoría del volumen de un equipo real (4634, 4672, 4688 normales, 5156, 7036…) no le interesa a casi ninguna regla.
+3. `load_json` también lee el fichero entero; `load_events` acumula todo en una lista y lo ordena.
+4. Los ficheros se procesan de uno en uno, en un solo núcleo.
+5. En la salida, los hallazgos repetidos se repiten: en el System real salen 129 hallazgos "servicio instalado" casi idénticos.
+
+### Objetivos medibles
+
+- **Memoria acotada**: el pico de RAM depende de los eventos *relevantes* y no del tamaño del fichero. Objetivo: un log de 1 GB, con menos de 1,5 GB de pico.
+- **Velocidad**: al menos **20.000 eventos leídos por segundo** por núcleo con `wevtutil` en Windows, y escalar con varios núcleos cuando hay varios ficheros (o un fichero grande troceado).
+- **Mismo resultado**: el benchmark de EVTX-ATTACK-SAMPLES da exactamente el mismo JSON por fichero antes y después (180/278). Ningún cambio de detección en esta fase.
+- **Cero dependencias obligatorias nuevas.**
+
+### Diseño
+
+1. **Cada regla declara qué eventos consume.** Se amplía `@rule(...)` con `eventos=` (conjunto de `(canal, id)` o de ids, de cualquier canal) y, opcionalmente, `filtro=` (un predicado barato sobre el `Event`, para casos como 5156, que solo interesa con el puerto 3389). Un test comprueba que todas las reglas lo declaran y que una regla nunca recibe eventos que no ha pedido.
+   - Con eso, `planificar(reglas)` calcula la **unión** de lo que hace falta. Los loaders descartan lo demás **antes** de construir el `Event`.
+   - `analyze --todos-los-eventos` desactiva el filtro (para depurar o exportar).
+2. **Filtrado nativo en `wevtutil`.** La consulta `wevtutil qe` lleva una XPath `*[System[(EventID=… or …)]]` con la unión de ids, de modo que Windows descarta en código nativo. La XPath del Event Log tiene un límite de expresiones: hay que comprobarlo empíricamente y trocear la consulta en varias si hace falta (o usar rangos `EventID>=x and EventID<=y`). Si `wevtutil` rechaza la consulta, el filtro se hace en Python.
+3. **Lectura en streaming.** `wevtutil` se lanza con `subprocess.Popen`, y su stdout se procesa con `xml.etree.ElementTree.XMLPullParser` (o `iterparse` sobre un envoltorio), liberando cada `<Event>` en cuanto se convierte (`elem.clear()`). Lo mismo con python-evtx, registro a registro. JSONL, línea a línea sin leer el fichero entero. Para un JSON en array se mantiene la carga completa, avisando si el fichero es grande (más de 200 MB).
+   - Se mantiene la defensa contra `DOCTYPE`/entidades. Con el pull parser, rechaza o ignora `DOCTYPE` antes de procesar nada.
+   - La codificación de la salida de wevtutil (UTF-8 o ANSI) se resuelve en streaming. Si no se puede saber de antemano, detéctala con los primeros KB.
+4. **`Event` más ligero.** `@dataclass(slots=True)` no existe en 3.9: usa `__slots__` explícitos. Internaliza (`sys.intern`) canal, proveedor, equipo y los nombres de campo. No cambies la API pública (`Event.get`, `Event.data`).
+5. **Paralelismo.** `concurrent.futures.ProcessPoolExecutor` para leer varios ficheros a la vez (`analyze --procesos N`, por defecto `os.cpu_count()`, y `1` desactiva). Los workers devuelven listas de eventos **ya filtrados**. Un `.evtx` grande (más de 256 MB) se trocea por rangos de `EventRecordID` con XPath (`EventRecordID>=a and EventRecordID<b`; el rango se saca de `wevtutil gli`) y cada trozo va a un worker. Mide si de verdad compensa. Si no, documéntalo y no lo hagas.
+6. **Correlación sin cambios.** Las reglas siguen recibiendo una lista ordenada por fecha, pero solo con sus eventos. `run_rules` agrupa los eventos por regla una vez (índice por `event_id`) en vez de que cada regla recorra todo.
+7. **Agrupar hallazgos repetidos.** Hallazgos con la misma regla, severidad, equipo y "clave" (por ejemplo, el nombre del servicio en WLH-006, la tarea en WLH-007 o el binario y el padre en reglas de procesos) se funden en uno solo con `veces`, `first_seen` y `last_seen`. Cada regla define su clave con un parámetro opcional `agrupar_por=` en `@rule`; sin él, no se agrupa. El informe muestra "×129".
+8. **Filtro temporal.** `analyze --desde FECHA --hasta FECHA` (ISO o relativo, como `24h` o `7d`). En `wevtutil` va a la XPath (`TimeCreated[@SystemTime>=…]`), y en el resto se filtra en el loader. `equipo` ya trabaja por horas: que use lo mismo.
+9. **Progreso y estadísticas.** Con `--progreso` (y automático si stderr es una terminal), escribe en stderr ficheros, eventos leídos, eventos útiles y eventos por segundo. Las `Stats` del informe incluyen eventos leídos, eventos descartados por el filtro, tiempo y velocidad.
+10. **Informes grandes.** El HTML no puede crecer sin límite: muestra como máximo N hallazgos por regla (por defecto 200), con un aviso "y X más". JSON y CSV siempre completos.
+
+### Herramienta de medición
+
+`tools/benchmark_rendimiento.py`:
+- Genera un JSONL sintético de N eventos (por ejemplo, `--eventos 2000000`) con una mezcla realista (mayoría de eventos irrelevantes, un 5-10 % relevantes y unos pocos ataques) reutilizando `samples/generate_samples.py` si sirve.
+- Acepta además rutas `.evtx` reales.
+- Mide tiempo, eventos por segundo y pico de RAM. En Windows, `ctypes` con `GetProcessMemoryInfo` (PeakWorkingSetSize), sumando los workers. `tracemalloc` no ve la memoria de los procesos hijo ni la de C.
+- Imprime una tabla Markdown.
+
+Para probar con `.evtx` grandes reales sin ser administrador: `wevtutil epl Application <ruta>` / `System`. Los de Security los genera Bryan como administrador si hacen falta.
+
+### Criterio de aceptación de la fase 1d
+
+- Benchmark de detección idéntico (mismo JSON por fichero, 180/278).
+- Tests en verde, incluidos tests nuevos de: declaración `eventos=` en todas las reglas, filtro, streaming (un XML de muchos eventos no se carga entero: comprueba que los elementos se liberan o usa un generador grande), troceo de XPath, agrupación de repetidos, `--desde/--hasta` y `--procesos 1` frente a `N` con el mismo resultado.
+- Tabla de rendimiento antes/después en el README (sección nueva "Rendimiento"), medida con `tools/benchmark_rendimiento.py`, sin cifras inventadas.
+
 ## Fase 3: cierre (la hace el arquitecto)
 
 - Revisión del código de Codex, benchmark final, prueba de falsos positivos con los logs reales del PC de Bryan (`winlog-hunter equipo`, lo ejecuta él como administrador) antes y después.
