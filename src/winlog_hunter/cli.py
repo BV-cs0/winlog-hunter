@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
-from datetime import timedelta, datetime, timezone
+from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 
 from . import __version__, actualizacion
+from .exclusiones import PLANTILLA, aplicar_con_avisos, cargar
 from .models import SEVERITIES, SEVERITY_ORDER
 from .parsers import load_events, limite_temporal
 from .report import RENDERERS, SEVERITY_LABEL, Stats, render_console
@@ -80,6 +82,14 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--progreso", action="store_true", help="muestra avance y velocidad en stderr")
     analyze.add_argument("--limite-html", type=int, default=200, help="máximo de hallazgos por regla en HTML (200)")
 
+    grupo = analyze.add_mutually_exclusive_group()
+    grupo.add_argument("--exclusiones", type=Path, help="fichero JSON de exclusiones")
+    grupo.add_argument("--sin-exclusiones", action="store_true", help="desactiva las exclusiones")
+    exc = sub.add_parser("exclusiones", help="genera o valida exclusiones de falsos positivos")
+    accion = exc.add_mutually_exclusive_group(required=True)
+    accion.add_argument("--plantilla", action="store_true", help="imprime una plantilla JSON válida")
+    accion.add_argument("--validar", type=Path, metavar="FICHERO", help="valida un fichero de exclusiones")
+
     sub.add_parser("rules", help="lista las reglas de detección")
 
     notify_choices = (*SEVERITIES, "nunca")
@@ -94,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     local.add_argument("--conservar-dias", type=int, default=30, help="borra informes más antiguos (30)")
     local.add_argument("--avisar-desde", choices=notify_choices, default="critical",
                        help="aviso en pantalla desde esta severidad (critical)")
+    grupo = local.add_mutually_exclusive_group()
+    grupo.add_argument("--exclusiones", type=Path, help="fichero JSON (por defecto, en ProgramData si existe)")
+    grupo.add_argument("--sin-exclusiones", action="store_true", help="desactiva las exclusiones")
     local.add_argument("--sin-abrir", action="store_true", help="no abre el informe al terminar")
 
     sched = sub.add_parser(
@@ -107,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     sched.add_argument("--salida", type=Path, help="carpeta de los informes (Documentos\\winlog-hunter)")
     sched.add_argument("--avisar-desde", choices=notify_choices, default="critical",
                        help="aviso en pantalla desde esta severidad (critical)")
+    sched.add_argument("--exclusiones", type=Path, help="fichero JSON que usará la tarea; por defecto, el de ProgramData")
     group = sched.add_mutually_exclusive_group()
     group.add_argument("--ahora", action="store_true", help="lanza la tarea ya, sin esperar")
     group.add_argument("--quitar", action="store_true", help="elimina la tarea")
@@ -225,11 +239,12 @@ def _local(args: argparse.Namespace) -> int:
             print("Aviso: sin administrador no se puede leer el log Security.", file=sys.stderr)
         result = local.analyze_this_computer(
             hours=args.horas,
+            exclusiones=args.exclusiones, sin_exclusiones=args.sin_exclusiones,
             output=args.salida,
             keep_days=args.conservar_dias,
             notify_from=None if args.avisar_desde == "nunca" else args.avisar_desde,
         )
-    except local.LocalError as exc:
+    except (local.LocalError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if not args.sin_abrir:
@@ -264,8 +279,8 @@ def _schedule(args: argparse.Namespace) -> int:
             print("error: --horas debe estar entre 1 y 8760", file=sys.stderr)
             return 2
         output = args.salida or local.default_output()
-        local.schedule(args.hora, args.horas, output, "nunca" if args.avisar_desde == "nunca" else args.avisar_desde)
-    except local.LocalError as exc:
+        local.schedule(args.hora, args.horas, output, "nunca" if args.avisar_desde == "nunca" else args.avisar_desde, exclusiones=args.exclusiones)
+    except (local.LocalError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"Tarea '{local.TASK_NAME}' creada: cada día a las {args.hora}, últimas {args.horas} h.")
@@ -316,6 +331,7 @@ def _analyze(args: argparse.Namespace) -> int:
         return 2
 
     try:
+        exclusiones = cargar(args.exclusiones) if args.exclusiones and not args.sin_exclusiones else []
         ahora = datetime.now(timezone.utc)
         desde = limite_temporal(args.desde, ahora) if args.desde else None
         hasta = limite_temporal(args.hasta, ahora) if args.hasta else None
@@ -338,10 +354,12 @@ def _analyze(args: argparse.Namespace) -> int:
         lateral_min_hosts=args.lateral_hosts,
     )
     all_findings = run_rules(loaded.events, config, only)
+    all_findings, excluidos = aplicar_con_avisos(all_findings, exclusiones, date.today(), loaded.warnings)
     minimum = SEVERITY_ORDER[args.min_severity]
     findings = [f for f in all_findings if f.rank >= minimum]
 
     stats = Stats(
+        excluidos=excluidos,
         events=len(loaded.events),
         files=loaded.files,
         first_event=loaded.events[0].timestamp if loaded.events else None,
@@ -372,7 +390,7 @@ def _analyze(args: argparse.Namespace) -> int:
     else:
         print(text)
 
-    # --fail-on es independiente de lo que se muestra: se evalúa sobre todos los hallazgos.
+    # --fail-on ignora --min-severity, pero respeta las exclusiones.
     if args.fail_on and any(f.rank >= SEVERITY_ORDER[args.fail_on] for f in all_findings):
         return 1
     return 0
@@ -388,6 +406,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     args = parser.parse_args(argv)
     actualizacion.iniciar(__version__)
+    if args.command == "exclusiones":
+        try:
+            if args.plantilla:
+                print(json.dumps(PLANTILLA, ensure_ascii=False, indent=2))
+            else:
+                elementos = cargar(args.validar)
+                avisos: list[str] = []
+                aplicar_con_avisos([], elementos, date.today(), avisos)
+                for aviso in avisos:
+                    print(f"Aviso: {aviso}", file=sys.stderr)
+                print(f"Exclusiones válidas: {len(elementos)}")
+            return 0
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     if args.command == "rules":
         return _list_rules()
     if args.command == "equipo":

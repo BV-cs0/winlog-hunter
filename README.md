@@ -355,17 +355,66 @@ Elimina la tarea programada, deja la auditoría de Windows como estaba antes de 
 python -m pip uninstall winlog-hunter
 ```
 
+## Falsos positivos y exclusiones
+
+Revisa el contexto antes de excluir una detección. Por ejemplo, una tarea del antivirus
+corporativo puede ser legítima: limita la excepción a su regla, equipos y nombre de tarea.
+Este es un ejemplo de configuración que debes adaptar, no un resultado de análisis:
+
+```json
+{
+  "version": 1,
+  "exclusiones": [
+    {
+      "motivo": "Tarea legítima del antivirus corporativo",
+      "reglas": ["WLH-007"],
+      "equipos": ["PC-*"],
+      "campos": {"tarea": "\\Antivirus\\*"},
+      "severidad_maxima": "medium",
+      "caduca": "2027-06-30"
+    }
+  ]
+}
+```
+
+`motivo` es obligatorio y debe acompañarse de al menos un criterio. Los criterios se
+combinan con Y; los elementos de `reglas` o `equipos`, con O. `reglas` acepta IDs
+existentes o `*`; si falta, admite todas las reglas. `equipos` y los valores de `campos`
+aceptan comodines (`*`, `?`, `[abc]`) sin distinguir mayúsculas. En evidencias con listas
+basta un elemento coincidente. `texto` busca una subcadena sin distinguir mayúsculas
+en el resumen y los valores de las evidencias. `severidad_maxima` usa el orden
+`low`, `medium`, `high`, `critical`. `caduca` sigue vigente durante la fecha indicada;
+al día siguiente deja de aplicarse y genera un aviso.
+
+```powershell
+winlog-hunter exclusiones --plantilla
+winlog-hunter exclusiones --validar exclusiones.json
+winlog-hunter analyze Security.evtx --exclusiones exclusiones.json -o informe.html
+winlog-hunter equipo --sin-exclusiones
+winlog-hunter programar --exclusiones C:\SOC\exclusiones.json
+```
+
+La plantilla imprime JSON sin comentarios. `analyze` solo usa exclusiones si se indica
+el fichero; `equipo` busca por defecto `%ProgramData%\winlog-hunter\exclusiones.json`
+si existe, también cuando lo ejecuta la tarea de `programar` como SYSTEM.
+`--sin-exclusiones` desactiva las exclusiones en `analyze` y `equipo`.
+Los informes conservan el número de hallazgos ocultos y sus motivos; JSON incluye
+`excluidos` y CSV identifica sus filas con `estado=excluido`. Si coinciden varias
+exclusiones, se registra la primera. Se excluye el hallazgo agrupado completo, incluidas
+sus repeticiones; los avisos y códigos de salida se calculan sobre los hallazgos visibles.
+
 ## Estructura
 
 ```text
 src/winlog_hunter/
   parsers.py         lectura de EVTX / XML / JSON y normalización de eventos
-  rules.py           las 21 reglas de detección mapeadas a MITRE ATT&CK
-  report.py          informe en consola, HTML, Markdown y JSON
+  rules/             las 36 reglas de detección mapeadas a MITRE ATT&CK
+  exclusiones.py     validación y aplicación de exclusiones justificadas
+  report.py          informe en consola, HTML, Markdown, CSV y JSON
   local.py           análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación
   pathfix.py         deja el comando winlog-hunter en el PATH si pip no lo hizo
   actualizacion.py   aviso de una línea si hay versión nueva en PyPI (nunca se actualiza solo)
-  cli.py             comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules)
+  cli.py             comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules, exclusiones)
   data/sysmon.xml    configuración de Sysmon para las reglas
 sigma/               las reglas en formato Sigma
 docs/                captura del informe

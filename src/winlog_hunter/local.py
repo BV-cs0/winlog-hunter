@@ -16,14 +16,15 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 from xml.sax.saxutils import escape
 
+from .exclusiones import resolver, aplicar_con_avisos
 from .models import SEVERITY_ORDER
 from .parsers import load_events, consultas_xpath, limite_temporal
-from .report import RENDERERS, SEVERITY_LABEL, Stats
+from .report import RENDERERS, SEVERITY_LABEL, Stats, resumen_exclusiones
 from .rules import run_rules, planificar
 
 TASK_NAME = "winlog-hunter diario"
@@ -137,7 +138,11 @@ def analyze_this_computer(
     log: Callable[[str], None] = print,
     exporter: Callable[[int, Path], Export] = export_logs,
     notifier: Callable[[str], None] | None = None,
+    exclusiones: Path | None = None,
+    sin_exclusiones: bool = False,
+    ruta_exclusiones: Path | None = None,
 ) -> LocalResult:
+    seleccion = resolver(exclusiones, sin_exclusiones, ruta_exclusiones)
     output = output or default_output()
     output.mkdir(parents=True, exist_ok=True)
     journal = output / "ejecuciones.log"
@@ -158,8 +163,9 @@ def analyze_this_computer(
             raise LocalError("no se pudo exportar ningún registro")
 
         loaded = load_events(exported.files, plan=planificar(), procesos=os.cpu_count() or 1, estadisticas=True)
-        findings = run_rules(loaded.events)
+        findings, excluidos = aplicar_con_avisos(run_rules(loaded.events), seleccion, date.today(), loaded.warnings)
         stats = Stats(
+            excluidos=excluidos,
             events=len(loaded.events),
             files=loaded.files,
             first_event=loaded.events[0].timestamp if loaded.events else None,
@@ -179,6 +185,8 @@ def analyze_this_computer(
         f"  {stats.events} eventos · {len(findings)} hallazgos (crítica {counts['critical']} · "
         f"alta {counts['high']} · media {counts['medium']} · baja {counts['low']})"
     )
+    for linea in resumen_exclusiones(stats):
+        say("  " + linea)
     say(f"  Informe: {html}")
 
     limit = datetime.now() - timedelta(days=keep_days)
@@ -212,17 +220,19 @@ def notify(text: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def task_command(hours: int, output: Path, notify_from: str, python: str | None = None) -> tuple[str, str]:
+def task_command(hours: int, output: Path, notify_from: str, python: str | None = None, exclusiones: Path | None = None) -> tuple[str, str]:
     """Programa y argumentos que ejecuta la tarea programada."""
     python = python or sys.executable
     pythonw = Path(python).with_name("pythonw.exe")
     exe = str(pythonw if pythonw.exists() else python)
     args = f'-m winlog_hunter equipo --horas {hours} --salida "{output}" --avisar-desde {notify_from} --sin-abrir'
+    if exclusiones is not None:
+        args += " " + subprocess.list2cmdline(["--exclusiones", str(Path(exclusiones).resolve())])
     return exe, args
 
 
-def task_xml(hour: str, hours: int, output: Path, notify_from: str, python: str | None = None) -> str:
-    exe, args = task_command(hours, output, notify_from, python)
+def task_xml(hour: str, hours: int, output: Path, notify_from: str, python: str | None = None, exclusiones: Path | None = None) -> str:
+    exe, args = task_command(hours, output, notify_from, python, exclusiones)
     start = f"{datetime.now():%Y-%m-%d}T{hour}:00"
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -265,13 +275,15 @@ def _require_admin(action: str) -> None:
         raise LocalError(f"para {action} abre PowerShell como administrador")
 
 
-def schedule(hour: str, hours: int, output: Path, notify_from: str) -> None:
+def schedule(hour: str, hours: int, output: Path, notify_from: str, exclusiones: Path | None = None,
+             ruta_exclusiones: Path | None = None) -> None:
     require_windows()
     _require_admin("programar la tarea")
+    resolver(exclusiones, predeterminada=ruta_exclusiones)
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         xml_path = Path(tmp) / "tarea.xml"
-        xml_path.write_text(task_xml(hour, hours, output, notify_from), encoding="utf-16")
+        xml_path.write_text(task_xml(hour, hours, output, notify_from, exclusiones=exclusiones), encoding="utf-16")
         proc = _run(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", str(xml_path), "/F"])
     if proc.returncode != 0:
         raise LocalError("no se pudo crear la tarea: " + " ".join((proc.stderr or proc.stdout).split()))

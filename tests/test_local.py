@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 from helpers import SAMPLE
 
@@ -22,6 +23,10 @@ class ThisComputer(unittest.TestCase):
     def setUp(self):
         self.out = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.out, True)
+        predeterminada = patch('winlog_hunter.exclusiones.ruta_predeterminada',
+                               return_value=self.out / 'exclusiones.json')
+        predeterminada.start()
+        self.addCleanup(predeterminada.stop)
 
     def test_writes_reports_journal_and_alerts(self):
         shown, lines = [], []

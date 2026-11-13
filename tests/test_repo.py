@@ -39,7 +39,7 @@ class Help(unittest.TestCase):
             self.assertEqual(main([]), 0)
         text = out.getvalue()
         self.assertIn("uso: winlog-hunter", text)
-        for command in ("analyze", "rules", "equipo", "programar", "sysmon", "auditoria", "desinstalar"):
+        for command in ("analyze", "rules", "equipo", "programar", "sysmon", "auditoria", "desinstalar", "exclusiones"):
             self.assertIn(command, text)
 
 

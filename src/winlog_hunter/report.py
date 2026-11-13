@@ -38,10 +38,22 @@ class Stats:
     leidos: int = 0
     descartados: int = 0
     segundos: float = 0.0
+    excluidos: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def velocidad(self):
         return self.leidos / self.segundos if self.segundos else 0.0
+
+
+def resumen_exclusiones(stats):
+    if not stats.excluidos:
+        return []
+    motivos = {}
+    for registro in stats.excluidos:
+        motivo = registro["motivo"]
+        motivos[motivo] = motivos.get(motivo, 0) + 1
+    return [f"Hallazgos excluidos: {len(stats.excluidos)}"] + [
+        f"  {cantidad} por: {_clean(motivo)}" for motivo, cantidad in motivos.items()]
 
 
 def fmt_ts(dt: datetime) -> str:
@@ -94,6 +106,7 @@ def render_console(findings: list[Finding], stats: Stats, color: bool = False) -
         + " · ".join(f"{SEVERITY_LABEL[s].lower()} {n}" for s, n in counts.items())
         + ")"
     )
+    lines.extend(resumen_exclusiones(stats))
     if not findings:
         lines.append("")
         lines.append("Sin hallazgos con los filtros actuales.")
@@ -145,8 +158,10 @@ def render_json(findings: list[Finding], stats: Stats) -> str:
             "last_event": stats.last_event.isoformat() if stats.last_event else None,
             "warnings": stats.warnings,
             "findings_by_severity": severity_counts(findings),
+            "hallazgos_excluidos": len(stats.excluidos),
         },
         "findings": [f.to_dict() for f in findings],
+        "excluidos": stats.excluidos,
     }
     return json.dumps(document, ensure_ascii=False, indent=2)
 
@@ -156,11 +171,16 @@ def render_csv(findings: list[Finding], stats: Stats) -> str:
     stream = io.StringIO(newline="")
     writer = csv.writer(stream)
     writer.writerow(["regla", "título", "severidad", "MITRE", "resumen", "primera_vez",
-                     "última_vez", "equipos", "eventos", "veces", "evidencias"])
+                     "última_vez", "equipos", "eventos", "veces", "evidencias", "estado", "motivo"])
     for f in findings:
         row = [f.rule_id, f.title, SEVERITY_LABEL[f.severity], ", ".join(f.mitre), f.summary,
                f.first_seen.isoformat(), f.last_seen.isoformat(), ", ".join(f.computers),
-               str(f.event_count), str(f.veces), json.dumps(f.evidence, ensure_ascii=False)]
+               str(f.event_count), str(f.veces), json.dumps(f.evidence, ensure_ascii=False), "visible", ""]
+        row = [_clean(value) for value in row]
+        writer.writerow(["'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value for value in row])
+    for registro in stats.excluidos:
+        row = [registro["rule_id"], "", "", "", registro["summary"], "", "", "", "",
+               str(registro.get("veces", 1)), "", "excluido", registro["motivo"]]
         row = [_clean(value) for value in row]
         writer.writerow(["'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value for value in row])
     return stream.getvalue()
@@ -198,6 +218,7 @@ def render_markdown(findings: list[Finding], stats: Stats) -> str:
             f"| {i} | {SEVERITY_LABEL[f.severity]} | {f.rule_id} | {_md(f.summary)} | "
             f"{_md(', '.join(f.computers)) or '?'} | {fmt_ts(f.first_seen)} |"
         )
+    out += ["", *[_md(linea) for linea in resumen_exclusiones(stats)]]
     out += ["", "## Detalle"]
     for i, f in enumerate(findings, 1):
         out += [
@@ -289,6 +310,7 @@ def render_html(findings: list[Finding], stats: Stats, limite_por_regla: int = 2
     for sev, n in counts.items():
         parts.append(f'<div class="card" style="color:var(--{sev})"><b>{n}</b><span>{SEVERITY_LABEL[sev]}</span></div>')
     parts.append("</section>")
+    parts.extend(f"<p>{esc(linea)}</p>" for linea in resumen_exclusiones(stats))
 
     if not findings:
         parts.append('<p class="empty">Sin hallazgos con los filtros actuales.</p>')
