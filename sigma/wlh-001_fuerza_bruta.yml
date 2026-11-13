@@ -37,4 +37,41 @@ correlation:
     condition:
         gte: 5
 level: high
+---
+title: 'Fallo de autenticación SQL'
+id: 39271192-445d-420c-89c7-ac68b7230001
+name: wlh_failed_sql_logon
+status: experimental
+description: 'Base 18456; Data0 es la cuenta y Data2 contiene el cliente. Cinco fallos contra cuentas distintas no se atribuyen a fuerza bruta de una cuenta.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: application
+detection:
+    selection:
+        EventID: 18456
+        Provider_Name|startswith: MSSQL
+        Data2|contains: '[CLIENT:'
+    condition: selection
+level: informational
+---
+title: 'Fuerza bruta contra una cuenta SQL'
+id: 80e1f646-4f04-4cf7-a215-3b41a3d80001
+status: experimental
+description: 'Cinco fallos de una cuenta desde el mismo cliente y equipo en cinco minutos.'
+author: Bryan Valenzuela
+date: 2026-11-13
+correlation:
+    type: event_count
+    rules:
+        - wlh_failed_sql_logon
+    group-by:
+        - Computer
+        - Data0
+        - Data2
+    timespan: 5m
+    condition:
+        gte: 5
+level: high
 # winlog-hunter: WLH-001

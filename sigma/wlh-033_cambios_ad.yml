@@ -1,0 +1,58 @@
+title: 'Cambios peligrosos en Active Directory'
+id: 930c5739-02ab-46e5-a951-dae880f20033
+status: experimental
+description: 'Cambios de atributos sensibles añadidos, SID History, DSRM y cuentas de equipo sin dólar. Windows Hello, SPN de usuario, SID History y reseteos autorizados requieren contexto. Los SPN de replicación son bajos: también los publican los DC normales. La pertenencia privilegiada observada para 4724 se correlaciona solo en el motor.'
+references:
+    - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-5136
+    - https://attack.mitre.org/techniques/T1098/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.persistence
+    - attack.t1098
+    - attack.t1207
+    - attack.t1134.005
+    - attack.t1222.001
+logsource:
+    product: windows
+    service: security
+detection:
+    selection_added:
+        EventID: 5136
+        OperationType: '%%14674'
+        AttributeValue|re: '.+'
+    selection_sensitive:
+        AttributeLDAPDisplayName:
+            - msDS-AllowedToActOnBehalfOfOtherIdentity
+            - msDS-KeyCredentialLink
+    selection_user_spn:
+        AttributeLDAPDisplayName: servicePrincipalName
+        ObjectClass: user
+    selection_replication:
+        AttributeLDAPDisplayName: nTSecurityDescriptor
+        AttributeValue|re: '(?i)\((oa|a);[^)]*(1131f6aa-9c07-11d1-f79f-00c04fc2dcd2|1131f6ad-9c07-11d1-f79f-00c04fc2dcd2|89e95b76-444d-4c62-991a-0facbeda640c)[^)]*\)'
+    selection_rename:
+        EventID: 4742
+        SamAccountName|re: '[^$-]$'
+    selection_dc_spn:
+        EventID: 4742
+        ServicePrincipalNames|re: '(?i)(^|\s)(gc/|e3514235-4b06-11d1-ab04-00c04fc2dcd2/)'
+    selection_history:
+        EventID:
+            - 4765
+            - 4766
+            - 4794
+    selection_reset:
+        EventID: 4724
+        TargetSid|endswith: '-500'
+    condition: (selection_added and (selection_sensitive or selection_user_spn or selection_replication)) or selection_rename or selection_dc_spn or selection_history or selection_reset
+fields:
+    - SubjectUserName
+    - ObjectDN
+    - AttributeLDAPDisplayName
+    - AttributeValue
+    - TargetUserName
+falsepositives:
+    - Administración de delegación, servicios, Windows Hello y migración de cuentas
+level: high
+# winlog-hunter: WLH-033

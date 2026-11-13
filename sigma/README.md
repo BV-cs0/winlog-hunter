@@ -1,12 +1,12 @@
 # Reglas Sigma
 
-Las 21 detecciones de winlog-hunter en formato [Sigma](https://sigmahq.io/), el estándar para compartir detecciones entre SIEM. Cada fichero lleva al final la regla de winlog-hunter a la que corresponde (`# winlog-hunter: WLH-0xx`).
+Las 36 detecciones de winlog-hunter en formato [Sigma](https://sigmahq.io/), el estándar para compartir detecciones entre SIEM. Cada fichero lleva al final la regla de winlog-hunter a la que corresponde (`# winlog-hunter: WLH-0xx`). Un fichero puede contener varios documentos para distintos canales o correlaciones.
 
 - **WLH-001 a WLH-004** son correlaciones (Sigma 2): una regla base de un evento más una regla que cuenta eventos o valores distintos en una ventana de tiempo.
-- **El resto** son reglas de un solo evento.
+- **WLH-032 y WLH-035** también describen correlaciones; otras reglas combinan fuentes de Security, System, Application y Sysmon.
 - Las etiquetas siguen **MITRE ATT&CK v20**.
 
-Todas pasan `sigma check` sin errores ni avisos y se convierten a Splunk.
+Los tests del repositorio comprueban IDs y campos obligatorios. Las reglas nuevas requieren validación y adaptación en el backend de destino; no se afirma una conversión a Splunk comprobada para esta ampliación.
 
 ## Convertirlas a tu SIEM
 
@@ -24,3 +24,6 @@ Sigma describe qué eventos buscar, pero no toda la lógica del analizador. Esta
 - **Severidad según el contexto.** winlog-hunter baja a *baja* un servicio o una tarea normales. En Sigma, WLH-006 y WLH-007 solo incluyen los casos sospechosos.
 - **WLH-003.** Sigma comprueba que haya fallos y un éxito de la misma cuenta en 30 minutos. winlog-hunter además exige 5 fallos y que el éxito llegue después.
 - **Decodificación.** winlog-hunter decodifica `-EncodedCommand` y busca dentro. Sigma solo ve la línea de comandos.
+- **PowerShell y aplicaciones.** Los campos `Payload`, `ContextInfo`, `Data0`, `param1`, `statement` y `NewValue` dependen de cómo exporte o normalice el backend. WLH-021 pliega concatenaciones literales y elimina backticks solo en el motor.
+- **Correlaciones.** La sesión anónima de WLH-032 exige en el motor una cuenta de máquina del propio equipo y sesión compatible. WLH-034 no alerta por 4985 aislado: requiere Sysmon 25 del mismo PID y equipo. Esa comparación no está representada como un evento simple en Sigma.
+- **Filtros de bajo ruido.** Las comparaciones de bits de WLH-026, de fechas de WLH-030 y de direcciones IP de WLH-031 no tienen equivalencia exacta en estas selecciones. Cada fichero declara sus aproximaciones. PsExec autorizado, credenciales alternativas NTLM y otras señales administrativas permanecen en severidad baja en el motor.

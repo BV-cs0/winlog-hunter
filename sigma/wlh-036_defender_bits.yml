@@ -1,0 +1,54 @@
+title: 'Alertas de Defender y trabajos BITS sospechosos'
+id: b4d86810-c539-480b-a382-19e949720036
+status: experimental
+description: 'Malware y protección desactivada en Defender; cambios de exclusiones bajos en el motor. BITS externo o intérprete local fuera de actualizadores habituales. La asociación de processPath por jobId, clasificación de URL externa y exclusiones completas de mantenimiento se realizan en el motor.'
+references:
+    - https://attack.mitre.org/techniques/T1197/
+    - https://attack.mitre.org/techniques/T1562/001/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.defense_evasion
+    - attack.persistence
+    - attack.t1562.001
+    - attack.t1197
+logsource:
+    product: windows
+detection:
+    selection_defender:
+        Provider_Name: Microsoft-Windows-Windows Defender
+        EventID:
+            - 1116
+            - 1117
+            - 1006
+            - 1015
+            - 5001
+    selection_exclusion:
+        Provider_Name: Microsoft-Windows-Windows Defender
+        EventID: 5007
+        NewValue|re: '(?i)\\exclusions\\(paths|processes|extensions)\\'
+    selection_bits:
+        Provider_Name: Microsoft-Windows-Bits-Client
+        EventID:
+            - 3
+            - 59
+            - 60
+    selection_remote:
+        url|startswith:
+            - 'http://'
+            - 'https://'
+    filter_internal:
+        url|re: '(?i)^https?://(localhost|127\.|10\.|192\.168\.|[^/]+\.(local|lan|internal)(/|$))'
+    selection_local_shell:
+        url|re: '(?i)\\(cmd|powershell|pwsh|regsvr32|rundll32|mshta|wscript|cscript)\.exe$'
+    selection_job_exe:
+        EventID: 3
+        jobTitle|re: '(?i)\.(exe|dll|ps1|vbs|js|msi)$'
+    filter_updater:
+        processPath|re: '(?i)^[a-z]:\\(windows\\(system32|syswow64)\\(svchost|msiexec)\.exe|program files( \(x86\))?\\(google\\(update|googleupdater)\\.*(googleupdate|updater)\.exe|common files\\microsoft shared\\clicktorun\\officeclicktorun\.exe))$'
+    condition: selection_defender or selection_exclusion or (selection_bits and ((selection_remote and not filter_internal) or selection_local_shell or selection_job_exe) and not filter_updater)
+falsepositives:
+    - Descargas BITS autorizadas e instaladores no reconocidos
+    - Exclusiones corporativas de Defender y su coexistencia con otro antivirus
+level: high
+# winlog-hunter: WLH-036

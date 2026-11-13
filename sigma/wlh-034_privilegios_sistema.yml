@@ -1,0 +1,75 @@
+title: 'Privilegios y ajustes peligrosos del sistema'
+id: 06f70cbc-2b71-4da8-a120-66e0be380034
+status: experimental
+description: 'Privilegios sensibles fuera de procesos habituales, arranque inseguro, retirada de auditoría y EventLog. El motor también correlaciona 4985 con Sysmon 25 para el mismo PID y equipo; no se sustituye aquí por un 4985 aislado. Privilegios en aplicaciones de Program Files y llamadas 4673 son bajos.'
+references:
+    - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4703
+    - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4826
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.privilege_escalation
+    - attack.defense_evasion
+    - attack.t1134
+    - attack.t1553.006
+    - attack.t1562
+logsource:
+    product: windows
+detection:
+    selection_enabled:
+        EventID: 4703
+        EnabledPrivilegeList|contains:
+            - SeDebugPrivilege
+            - SeTcbPrivilege
+            - SeImpersonatePrivilege
+        ProcessName|contains: '\'
+    selection_privileged_call:
+        EventID: 4673
+        PrivilegeList|contains:
+            - SeDebugPrivilege
+            - SeTcbPrivilege
+            - SeImpersonatePrivilege
+        ProcessName|contains: '\'
+    filter_system:
+        ProcessName|re: '(?i)^[a-z]:\\windows\\((system32|syswow64|winsxs)\\|explorer\.exe$)'
+    filter_debugger:
+        ProcessName|re: '(?i)^[a-z]:\\program files( \(x86\))?\\(microsoft visual studio|windows kits|debugging tools for windows[^\\]*)\\.*(devenv|msvsmon|vsdebugconsole|vsdebugeng|windbg|cdb)\.exe$'
+    selection_boot:
+        EventID: 4826
+    selection_debug:
+        KernelDebug: '%%1842'
+    selection_test:
+        TestSigning: '%%1842'
+    selection_integrity:
+        DisableIntegrityChecks: '%%1842'
+    selection_policy:
+        EventID: 4719
+        AuditPolicyChanges|contains:
+            - 'Success removed'
+            - 'Failure removed'
+            - '%%8448'
+            - '%%8450'
+    selection_stop:
+        EventID: 7036
+        param1:
+            - EventLog
+            - Windows Event Log
+            - Registro de eventos de Windows
+        param2:
+            - stopped
+            - detenido
+            - parado
+    selection_disable:
+        EventID: 7040
+        param1:
+            - EventLog
+            - Windows Event Log
+            - Registro de eventos de Windows
+        param3:
+            - disabled
+            - deshabilitado
+    condition: ((selection_enabled or selection_privileged_call) and not filter_system and not filter_debugger) or (selection_boot and (selection_debug or selection_test or selection_integrity)) or selection_policy or selection_stop or selection_disable
+falsepositives:
+    - Depuración, administración autorizada y cambios planificados de seguridad
+level: medium
+# winlog-hunter: WLH-034

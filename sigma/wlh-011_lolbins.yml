@@ -112,4 +112,30 @@ fields:
 falsepositives:
     - Scripts de administración que usan estas herramientas
 level: high
+---
+title: 'Paquete MSI desde URL'
+id: 12081489-c442-422c-8f0c-efcc6f680011
+status: experimental
+description: 'Paquetes desde URL en MsiInstaller; indicio bajo porque también los usan instaladores legítimos.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: application
+detection:
+    selection_event:
+        EventID:
+            - 1040
+            - 1042
+        Provider_Name: MsiInstaller
+    selection_url0:
+        Data0|re: '(?i)https?://'
+    selection_url1:
+        Data1|re: '(?i)https?://'
+    selection_package:
+        PackageName|re: '(?i)https?://'
+    condition: selection_event and (selection_url0 or selection_url1 or selection_package)
+falsepositives:
+    - Instalaciones y actualizaciones autorizadas
+level: low
 # winlog-hunter: WLH-011

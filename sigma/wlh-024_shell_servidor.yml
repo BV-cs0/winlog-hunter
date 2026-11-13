@@ -67,4 +67,37 @@ fields:
 falsepositives:
     - Instaladores que usan shells y activaciones DCOM legítimas; severidad media en el motor
 level: high
+---
+title: 'SQL Server habilita o ejecuta xp_cmdshell'
+id: fd27c735-a982-4c09-b8aa-6c0611ad0024
+status: experimental
+description: 'Cambio explícito de xp_cmdshell a 1 o ejecución auditada; una administración autorizada de SQL puede usarlo.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: application
+detection:
+    selection_source:
+        Provider_Name|startswith: MSSQL
+    selection_enable:
+        EventID: 15457
+        Data0: xp_cmdshell
+        Data2: '1'
+    filter_already_enabled:
+        Data1: '1'
+    selection_exec_event:
+        EventID: 33205
+    selection_statement:
+        statement|re: '(?i)\bexec(ute)?\s+([\w\[\]]+\.){0,2}\[?xp_cmdshell\b'
+    selection_data:
+        Data0|re: '(?i)\bexec(ute)?\s+([\w\[\]]+\.){0,2}\[?xp_cmdshell\b'
+    filter_failed:
+        succeeded:
+            - 'false'
+            - '0'
+    condition: selection_source and ((selection_enable and not filter_already_enabled) or (selection_exec_event and (selection_statement or selection_data) and not filter_failed))
+falsepositives:
+    - Administración autorizada de bases de datos
+level: medium
 # winlog-hunter: WLH-024

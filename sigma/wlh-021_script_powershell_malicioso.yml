@@ -1,7 +1,7 @@
 title: 'Script de PowerShell malicioso'
 id: ed4215cf-3066-5558-af07-4e8030394779
 status: experimental
-description: 'Evento 4104 (Script Block Logging) con volcado de LSASS, Mimikatz, evasión de AMSI, Kerberoasting o inyección de código.'
+description: '4104, 4103 y 800 con indicadores de credenciales, AMSI, inyección o descargas. El motor elimina backticks y pliega concatenaciones literales acotadas; Sigma no reproduce esa normalización ni la severidad contextual de las descargas administrativas.'
 references:
     - https://github.com/BV-cs0/winlog-hunter
 author: Bryan Valenzuela
@@ -16,8 +16,7 @@ tags:
     - attack.t1055
 logsource:
     product: windows
-    category: ps_script
-    definition: 'Requiere Script Block Logging activado'
+    definition: 'PowerShell/Operational 4104 y 4103, o Windows PowerShell 800; mapear los nombres de campos según el backend'
 detection:
     selection:
         ScriptBlockText|contains:
@@ -36,7 +35,21 @@ detection:
             - 'WriteProcessMemory'
             - 'Invoke-Shellcode'
             - 'Invoke-ReflectivePEInjection'
-    condition: selection
+    selection_events:
+        EventID:
+            - 4103
+            - 4104
+            - 800
+        Provider_Name|contains: PowerShell
+    selection_text_payload:
+        Payload|re: '(?is)invoke-mimikatz|sekurlsa::|lsadump::|amsiutils|amsiinitfailed|amsiscanbuffer|minidumpwritedump|out-minidump|createremotethread|writeprocessmemory|invoke-shellcode|invoke-reflectivepeinjection|\biex\b.{0,500}download|net\.webclient.{0,500}downloadfile'
+    selection_text_context:
+        ContextInfo|re: '(?is)invoke-mimikatz|sekurlsa::|lsadump::|amsiutils|amsiinitfailed|minidumpwritedump|createremotethread|writeprocessmemory|\biex\b.{0,500}download|net\.webclient.{0,500}downloadfile'
+    selection_text_classic:
+        Data0|re: '(?is)invoke-mimikatz|sekurlsa::|lsadump::|amsiutils|amsiinitfailed|minidumpwritedump|createremotethread|writeprocessmemory|\biex\b.{0,500}download|net\.webclient.{0,500}downloadfile'
+    selection_text_script:
+        ScriptBlockText|re: '(?is)\biex\b.{0,500}download|net\.webclient.{0,500}downloadfile|invoke-item.{0,160}(\$env:temp|%temp%).{0,160}\.exe'
+    condition: selection or (selection_events and 1 of selection_text_*)
 fields:
     - ScriptBlockText
     - Path

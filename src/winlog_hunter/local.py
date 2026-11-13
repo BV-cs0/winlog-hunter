@@ -30,8 +30,12 @@ TASK_NAME = "winlog-hunter diario"
 LOGS = (
     "Security",
     "System",
+    "Application",
     "Microsoft-Windows-Sysmon/Operational",
     "Microsoft-Windows-PowerShell/Operational",
+    "Windows PowerShell",
+    "Microsoft-Windows-Windows Defender/Operational",
+    "Microsoft-Windows-Bits-Client/Operational",
 )
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -388,6 +392,7 @@ AUDIT_SUBCATEGORIES = [
     ("{0CCE9227-69AE-11D9-BED3-505054503030}", "Otros eventos de acceso a objetos", "4698", "/success:enable"),
     ("{0CCE9235-69AE-11D9-BED3-505054503030}", "Administración de cuentas de usuario", "4720", "/success:enable"),
     ("{0CCE9237-69AE-11D9-BED3-505054503030}", "Administración de grupos de seguridad", "4728, 4732", "/success:enable"),
+    ("{0CCE922F-69AE-11D9-BED3-505054503030}", "Cambios en la política de auditoría", "4719", "/success:enable"),
 ]
 AUDIT_REGISTRY = [
     (r"HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging", "EnableScriptBlockLogging",

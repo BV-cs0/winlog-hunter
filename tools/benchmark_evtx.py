@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from winlog_hunter.parsers import load_events  # noqa: E402
 from winlog_hunter.rules import run_rules  # noqa: E402
+from winlog_hunter.models import SEVERITY_ORDER  # noqa: E402
 
 IGNORED = {"WLH-005"}
 TACTICS = {
@@ -51,6 +52,7 @@ def main() -> int:
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--json", type=Path, help="guarda el resultado por fichero")
     parser.add_argument("--detalle", action="store_true", help="lista los ficheros no detectados")
+    parser.add_argument("--min-severity", choices=SEVERITY_ORDER, default="low", help="severidad mínima de los hallazgos que cuentan como detección")
     args = parser.parse_args()
 
     files = sorted(args.dataset.rglob("*.evtx"))
@@ -60,7 +62,7 @@ def main() -> int:
         rel = path.relative_to(args.dataset).as_posix()
         try:
             events = load_events([path]).events
-            rules = sorted({f.rule_id for f in run_rules(events)})
+            rules = sorted({f.rule_id for f in run_rules(events) if f.rank >= SEVERITY_ORDER[args.min_severity]})
         except Exception as exc:  # un fichero roto no debe parar la medición
             print(f"aviso: {rel}: {exc}", file=sys.stderr)
             rules = []

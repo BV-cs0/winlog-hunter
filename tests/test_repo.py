@@ -7,6 +7,14 @@ from winlog_hunter import __version__
 
 
 class Repository(unittest.TestCase):
+    def test_readme_lists_every_rule_and_sigma_count(self):
+        from winlog_hunter.rules import RULES
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        rows = re.findall(r"^\| (WLH-\d{3}) \|", readme, re.M)
+        self.assertEqual(rows, [r.id for r in RULES])
+        sigma = (ROOT / "sigma" / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"Las {len(RULES)} detecciones", sigma)
+
     def test_versions_match(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn(f'version = "{__version__}"', pyproject)

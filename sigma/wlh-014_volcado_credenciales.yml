@@ -54,4 +54,32 @@ fields:
 falsepositives:
     - Copias de seguridad del Directorio Activo planificadas
 level: critical
+---
+title: 'LSASS monitorizado o copia de base de Active Directory'
+id: 9847e30d-3fda-4891-b6af-aa75b94d0014
+status: experimental
+description: 'Application 3001 de ProcessExitMonitor sobre LSASS y ESENT 325-327 sobre ntds.dit fuera de su ruta normal; una copia autorizada de AD también puede producirlo.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: application
+detection:
+    selection_lsass:
+        EventID: 3001
+        Provider_Name: Microsoft-Windows-ProcessExitMonitor
+        param1|endswith: '\lsass.exe'
+    selection_ntds:
+        EventID:
+            - 325
+            - 326
+            - 327
+        Provider_Name: ESENT
+        Data4|endswith: '\ntds.dit'
+    filter_ntds_normal:
+        Data4|re: '(?i)^[a-z]:\\windows\\ntds\\ntds\.dit$|\\\$snap_[^\\]+\\windows\\ntds\\'
+    condition: selection_lsass or (selection_ntds and not filter_ntds_normal)
+falsepositives:
+    - Diagnóstico de LSASS y copias de AD autorizadas
+level: medium
 # winlog-hunter: WLH-014

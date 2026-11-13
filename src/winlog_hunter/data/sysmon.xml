@@ -1,41 +1,86 @@
-<!--
-  Configuración de Sysmon para winlog-hunter.
-
-  Registra lo que usan las reglas de winlog-hunter y filtra el ruido para que el log
-  ocupe poco en un equipo normal:
-
-    1      Procesos creados (todos, salvo ruido conocido)        WLH-010, 011, 012, 014, 018
-    3      Conexiones de red de intérpretes, LOLBins y Office    contexto para el analista
-    8      Hilos remotos (inyección de código)                   contexto para el analista
-    10     Accesos a la memoria de LSASS                         WLH-013
-    12-14  Cambios en claves de arranque y persistencia          WLH-019
-    19-21  Suscripciones de eventos WMI                          WLH-020
-
-  Se instala con "winlog-hunter sysmon" y la opción instalar (o actualizar si ya está).
--->
+<!-- Configuración filtrada para winlog-hunter: eventos 1, 2, 3, 7, 8, 10, 11, 12-14, 17-21 y 25.
+Los include vacíos solo desactivan eventos no utilizados. Las exclusiones ganan;
+no hay exclusión global de DLL de Windows ni de conexiones de red locales.
+Los filtros compuestos llevan Rule groupRelation="and" y las alternativas se unen con "or".
+Instalación en C:\Windows; otras ubicaciones requieren adaptar las rutas.
+Sysmon no filtra por bits de permisos ni por profundidad de ruta: se enumeran máscaras
+y se captura un superconjunto de EXE en Program Files para las rutas sin comillas.
+En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
 <Sysmon schemaversion="4.90">
   <HashAlgorithms>SHA256</HashAlgorithms>
   <CheckRevocation>False</CheckRevocation>
   <EventFiltering>
-
-    <!-- 1: creación de procesos -->
     <RuleGroup name="Procesos" groupRelation="or">
       <ProcessCreate onmatch="exclude">
         <Image condition="is">C:\Windows\System32\conhost.exe</Image>
-        <Image condition="end with">\Sysmon64.exe</Image>
-        <Image condition="end with">\Sysmon.exe</Image>
         <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
         <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
         <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
         <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
         <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
         <Image condition="is">C:\Windows\System32\WUDFHost.exe</Image>
+        <Image condition="end with">\Sysmon.exe</Image>
+        <Image condition="end with">\Sysmon64.exe</Image>
         <Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</Image>
       </ProcessCreate>
     </RuleGroup>
-
-    <!-- 3: conexiones de red, solo de procesos que suelen usar los atacantes -->
-    <RuleGroup name="Red" groupRelation="or">
+    <RuleGroup name="Fechas de código en perfiles y temporales" groupRelation="or">
+      <FileCreateTime onmatch="include">
+        <Rule name="Código .exe" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <Rule name="Código .dll" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.dll</TargetFilename>
+        </Rule>
+        <Rule name="Código .sys" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.sys</TargetFilename>
+        </Rule>
+        <Rule name="Código .ps1" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.ps1</TargetFilename>
+        </Rule>
+        <Rule name="Código .bat" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.bat</TargetFilename>
+        </Rule>
+        <Rule name="Código .cmd" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.cmd</TargetFilename>
+        </Rule>
+        <Rule name="Código .vbs" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.vbs</TargetFilename>
+        </Rule>
+        <Rule name="Código .vbe" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.vbe</TargetFilename>
+        </Rule>
+        <Rule name="Código .js" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.js</TargetFilename>
+        </Rule>
+        <Rule name="Código .jse" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.jse</TargetFilename>
+        </Rule>
+        <Rule name="Código .wsf" groupRelation="and">
+          <TargetFilename condition="contains any">\Users\;\Temp\;\PerfLogs\</TargetFilename>
+          <TargetFilename condition="end with">.wsf</TargetFilename>
+        </Rule>
+      </FileCreateTime>
+    </RuleGroup>
+    <RuleGroup name="Copias e instaladores normales" groupRelation="or">
+      <FileCreateTime onmatch="exclude">
+        <Image condition="is">C:\Windows\explorer.exe</Image>
+        <Image condition="is">C:\Windows\System32\msiexec.exe</Image>
+        <Image condition="is">C:\Windows\System32\robocopy.exe</Image>
+        <Image condition="is">C:\Windows\System32\xcopy.exe</Image>
+      </FileCreateTime>
+    </RuleGroup>
+    <RuleGroup name="Red de intérpretes y LOLBins" groupRelation="or">
       <NetworkConnect onmatch="include">
         <Image condition="end with">\powershell.exe</Image>
         <Image condition="end with">\pwsh.exe</Image>
@@ -43,22 +88,65 @@
         <Image condition="end with">\mshta.exe</Image>
         <Image condition="end with">\rundll32.exe</Image>
         <Image condition="end with">\regsvr32.exe</Image>
-        <Image condition="end with">\certutil.exe</Image>
-        <Image condition="end with">\bitsadmin.exe</Image>
         <Image condition="end with">\wscript.exe</Image>
         <Image condition="end with">\cscript.exe</Image>
         <Image condition="end with">\msbuild.exe</Image>
-        <Image condition="end with">\installutil.exe</Image>
-        <Image condition="end with">\WINWORD.EXE</Image>
-        <Image condition="end with">\EXCEL.EXE</Image>
-        <Image condition="end with">\POWERPNT.EXE</Image>
+        <Image condition="end with">\certutil.exe</Image>
+        <Image condition="end with">\bitsadmin.exe</Image>
+        <Image condition="end with">\notepad.exe</Image>
+        <!-- Ejecutables lanzados desde carpetas típicas del malware: contexto para el analista. -->
         <Image condition="begin with">C:\Users\Public\</Image>
         <Image condition="contains">\AppData\Local\Temp\</Image>
+        <Rule name="RDP inesperado" groupRelation="and">
+          <DestinationPort condition="is">3389</DestinationPort>
+          <Image condition="excludes any">\mstsc.exe;\svchost.exe;\msrdc.exe;\rdcman.exe;\mremoteng.exe;\remotedesktop.exe;\windowsapp.exe</Image>
+        </Rule>
       </NetworkConnect>
     </RuleGroup>
-
-    <!-- 8: hilos remotos -->
-    <RuleGroup name="Inyeccion" groupRelation="or">
+    <RuleGroup name="Carga de DLL filtrada" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <Rule name="DLL sin firma fuera de instalación" groupRelation="and">
+          <Signed condition="is">false</Signed>
+          <ImageLoaded condition="excludes any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Program Files\;C:\Program Files (x86)\</ImageLoaded>
+          <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\</Image>
+        </Rule>
+        <Rule name="Pareja conocida winword.exe wwlib.dll" groupRelation="and">
+          <Signed condition="is">false</Signed>
+          <Image condition="end with">\winword.exe</Image>
+          <ImageLoaded condition="end with">\wwlib.dll</ImageLoaded>
+          <ImageLoaded condition="excludes any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Program Files\;C:\Program Files (x86)\</ImageLoaded>
+        </Rule>
+        <Rule name="Pareja conocida svchost.exe cdpsshims.dll" groupRelation="and">
+          <Signed condition="is">false</Signed>
+          <Image condition="end with">\svchost.exe</Image>
+          <ImageLoaded condition="end with">\cdpsshims.dll</ImageLoaded>
+          <ImageLoaded condition="excludes any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Program Files\;C:\Program Files (x86)\</ImageLoaded>
+        </Rule>
+        <Rule name="Pareja conocida svchost.exe wlbsctrl.dll" groupRelation="and">
+          <Signed condition="is">false</Signed>
+          <Image condition="end with">\svchost.exe</Image>
+          <ImageLoaded condition="end with">\wlbsctrl.dll</ImageLoaded>
+          <ImageLoaded condition="excludes any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Program Files\;C:\Program Files (x86)\</ImageLoaded>
+        </Rule>
+        <Rule name="Autoload sysprep" groupRelation="and">
+          <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Windows\ehome\</Image>
+          <Image condition="end with">\sysprep.exe</Image>
+        </Rule>
+        <Rule name="Autoload cliconfg" groupRelation="and">
+          <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Windows\ehome\</Image>
+          <Image condition="end with">\cliconfg.exe</Image>
+        </Rule>
+        <Rule name="Autoload migwiz" groupRelation="and">
+          <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Windows\ehome\</Image>
+          <Image condition="end with">\migwiz.exe</Image>
+        </Rule>
+        <Rule name="Autoload mcx2prov" groupRelation="and">
+          <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Windows\ehome\</Image>
+          <Image condition="end with">\mcx2prov.exe</Image>
+        </Rule>
+      </ImageLoad>
+    </RuleGroup>
+    <RuleGroup name="Hilos remotos" groupRelation="or">
       <CreateRemoteThread onmatch="exclude">
         <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
         <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
@@ -67,25 +155,55 @@
         <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
       </CreateRemoteThread>
     </RuleGroup>
-
-    <!-- 10: accesos a LSASS -->
-    <RuleGroup name="LSASS" groupRelation="and">
+    <RuleGroup name="Acceso a procesos" groupRelation="or">
       <ProcessAccess onmatch="include">
-        <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
-        <GrantedAccess condition="excludes any">0x1000;0x1400;0x100000;0x101000</GrantedAccess>
+        <Rule name="LSASS" groupRelation="and">
+          <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
+          <GrantedAccess condition="is not">0x1000</GrantedAccess>
+        </Rule>
+        <Rule name="Escritura e hilos desde usuario" groupRelation="and">
+          <SourceImage condition="contains any">\Users\;\Temp\;\PerfLogs\</SourceImage>
+          <GrantedAccess condition="is any">0x1F0FFF;0x1FFFFF;0x143A;0x1F3FFF;0x2A;0x3A</GrantedAccess>
+          <TargetImage condition="not end with">\lsass.exe</TargetImage>
+        </Rule>
+        <CallTrace condition="contains">UNKNOWN</CallTrace>
       </ProcessAccess>
     </RuleGroup>
-    <RuleGroup name="LSASS legítimo" groupRelation="or">
+    <RuleGroup name="LSASS de componentes normales" groupRelation="or">
       <ProcessAccess onmatch="exclude">
-        <SourceImage condition="is">C:\Windows\system32\wininit.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\system32\csrss.exe</SourceImage>
-        <SourceImage condition="is">C:\Windows\system32\services.exe</SourceImage>
-        <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
+        <Rule name="Acceso del sistema a LSASS" groupRelation="and">
+          <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
+          <SourceImage condition="is any">C:\Windows\System32\wininit.exe;C:\Windows\System32\csrss.exe;C:\Windows\System32\services.exe</SourceImage>
+        </Rule>
+        <Rule name="Acceso de Defender a LSASS" groupRelation="and">
+          <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
+          <SourceImage condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</SourceImage>
+        </Rule>
       </ProcessAccess>
     </RuleGroup>
-
-    <!-- 12, 13, 14: registro, solo claves de arranque y persistencia -->
-    <RuleGroup name="Persistencia" groupRelation="or">
+    <RuleGroup name="Ficheros de persistencia y credenciales" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\System32\spool\drivers\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\System32\sysprep\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\System32\oobe\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\SysWOW64\sysprep\</TargetFilename>
+        <TargetFilename condition="contains">\Windows\SysWOW64\oobe\</TargetFilename>
+        <TargetFilename condition="contains">\Windows \</TargetFilename>
+        <TargetFilename condition="end with">.dmp</TargetFilename>
+        <TargetFilename condition="end with">\mimilsa.log</TargetFilename>
+        <TargetFilename condition="is">C:\Program.exe</TargetFilename>
+        <Rule name="Ejecutables en Program Files" groupRelation="and">
+          <TargetFilename condition="begin with">C:\Program Files\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <Rule name="Ejecutables en Program Files" groupRelation="and">
+          <TargetFilename condition="begin with">C:\Program Files (x86)\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+      </FileCreate>
+    </RuleGroup>
+    <RuleGroup name="Registro de persistencia y defensas" groupRelation="or">
       <RegistryEvent onmatch="include">
         <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
         <TargetObject condition="contains">\Policies\Explorer\Run</TargetObject>
@@ -93,44 +211,126 @@
         <TargetObject condition="contains">\Winlogon\Userinit</TargetObject>
         <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
         <TargetObject condition="contains">\SilentProcessExit\</TargetObject>
-        <TargetObject condition="end with">\Windows\AppInit_DLLs</TargetObject>
+        <TargetObject condition="contains">\Windows\AppInit_DLLs</TargetObject>
         <TargetObject condition="contains">\Shell Folders\</TargetObject>
+        <TargetObject condition="contains">\User Shell Folders\</TargetObject>
         <TargetObject condition="contains">\Session Manager\BootExecute</TargetObject>
+        <TargetObject condition="contains">\Session Manager\SetupExecute</TargetObject>
         <TargetObject condition="contains">\Control\Lsa\</TargetObject>
         <TargetObject condition="contains">\Microsoft\NetSh\</TargetObject>
-        <TargetObject condition="contains">\InprocServer32\</TargetObject>
-        <TargetObject condition="contains">\LocalServer32\</TargetObject>
-        <TargetObject condition="contains">\TreatAs\</TargetObject>
-        <TargetObject condition="begin with">HKLM\SAM\SAM\Domains\Account\Users\</TargetObject>
-        <TargetObject condition="end with">\ImagePath</TargetObject>
-        <TargetObject condition="end with">\ServiceDll</TargetObject>
+        <TargetObject condition="contains">\InprocServer32</TargetObject>
+        <TargetObject condition="contains">\LocalServer32</TargetObject>
+        <TargetObject condition="contains">\TreatAs</TargetObject>
+        <TargetObject condition="contains">\SAM\SAM\Domains\Account\Users\</TargetObject>
+        <TargetObject condition="contains">\AppCompatFlags\Custom\</TargetObject>
+        <TargetObject condition="contains">\AppCompatFlags\InstalledSDB\</TargetObject>
+        <TargetObject condition="contains">\WinSock2\Parameters\Protocol_Catalog9\</TargetObject>
+        <TargetObject condition="contains">\Control\NetworkProvider\Order\</TargetObject>
+        <TargetObject condition="contains">\NullSessionPipes</TargetObject>
+        <TargetObject condition="contains">\Control\Print\Monitors\</TargetObject>
+        <TargetObject condition="contains">\ServiceDll</TargetObject>
+        <TargetObject condition="contains">\Group Policy\Scripts\</TargetObject>
+        <TargetObject condition="contains">\IEAK\GroupPolicy\PendingGPOs\</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\App Paths\</TargetObject>
+        <TargetObject condition="contains">\Environment\windir</TargetObject>
+        <TargetObject condition="contains">\Environment\SystemRoot</TargetObject>
+        <TargetObject condition="contains">\Policies\System\EnableLUA</TargetObject>
+        <TargetObject condition="contains">\PowerShell\ScriptBlockLogging</TargetObject>
+        <TargetObject condition="contains">\PowerShell\1\ShellIds\Microsoft.PowerShell\ExecutionPolicy</TargetObject>
+        <TargetObject condition="contains">\Environment\__PSLockdownPolicy</TargetObject>
+        <TargetObject condition="contains">\Windows Defender\Exclusions\</TargetObject>
+        <TargetObject condition="contains">\Windows Defender\DisableAntiSpyware</TargetObject>
+        <TargetObject condition="contains">\Windows Defender\Real-Time Protection\</TargetObject>
+        <TargetObject condition="contains">\SecurityProviders\WDigest\UseLogonCredential</TargetObject>
+        <TargetObject condition="contains">\Terminal Server\fDenyTSConnections</TargetObject>
+        <TargetObject condition="contains">\RDP-Tcp\PortNumber</TargetObject>
+        <TargetObject condition="contains">\Services\PortProxy\</TargetObject>
+        <TargetObject condition="contains">\Security\AccessVBOM</TargetObject>
+        <TargetObject condition="contains">\Software\Classes\ms-settings\shell\open\command</TargetObject>
+        <TargetObject condition="contains">_Classes\ms-settings\shell\open\command</TargetObject>
+        <TargetObject condition="contains">\Software\Classes\mscfile\shell\open\command</TargetObject>
+        <TargetObject condition="contains">_Classes\mscfile\shell\open\command</TargetObject>
+        <TargetObject condition="contains">\Software\Classes\exefile\shell\open\command</TargetObject>
+        <TargetObject condition="contains">_Classes\exefile\shell\open\command</TargetObject>
+        <TargetObject condition="contains">\Software\Classes\Folder\shell\open\command</TargetObject>
+        <TargetObject condition="contains">_Classes\Folder\shell\open\command</TargetObject>
+        <TargetObject condition="contains">\Software\Classes\Launcher.SystemSettings\shell\open\command</TargetObject>
+        <TargetObject condition="contains">_Classes\Launcher.SystemSettings\shell\open\command</TargetObject>
+        <TargetObject condition="contains">\Services\SharedAccess\Parameters\FirewallPolicy\DomainProfile\EnableFirewall</TargetObject>
+        <TargetObject condition="contains">\Services\SharedAccess\Parameters\FirewallPolicy\StandardProfile\EnableFirewall</TargetObject>
+        <TargetObject condition="contains">\Services\SharedAccess\Parameters\FirewallPolicy\PublicProfile\EnableFirewall</TargetObject>
+        <TargetObject condition="contains">\Software\Policies\Microsoft\WindowsFirewall\DomainProfile\EnableFirewall</TargetObject>
+        <TargetObject condition="contains">\Software\Policies\Microsoft\WindowsFirewall\StandardProfile\EnableFirewall</TargetObject>
+        <TargetObject condition="contains">\Software\Policies\Microsoft\WindowsFirewall\PublicProfile\EnableFirewall</TargetObject>
+        <Rule name="Borrado de historial MRU" groupRelation="and">
+          <EventType condition="is any">DeleteKey;DeleteValue</EventType>
+          <TargetObject condition="contains any">\Explorer\RunMRU;\Explorer\RecentDocs;\Explorer\ComDlg32\OpenSavePidlMRU;\Explorer\ComDlg32\LastVisitedPidlMRU</TargetObject>
+        </Rule>
+        <Rule name="Scripts GPO en estado de maquina" groupRelation="and">
+          <TargetObject condition="contains all">\Group Policy\State\;\Scripts\</TargetObject>
+        </Rule>
+        <TargetObject condition="contains">\Windows Defender\DisableRealtimeMonitoring</TargetObject>
+        <TargetObject condition="contains">\Windows Defender\DisableBehaviorMonitoring</TargetObject>
       </RegistryEvent>
     </RuleGroup>
-
-    <!-- 19, 20, 21: WMI -->
-    <RuleGroup name="WMI" groupRelation="or">
+    <RuleGroup name="Canales de herramientas remotas" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <PipeName condition="contains">psexesvc</PipeName>
+        <PipeName condition="contains">remcom</PipeName>
+        <PipeName condition="contains">paexec</PipeName>
+        <PipeName condition="contains">csexec</PipeName>
+        <PipeName condition="contains">msagent_</PipeName>
+        <PipeName condition="contains">postex_</PipeName>
+        <PipeName condition="contains">status_</PipeName>
+        <PipeName condition="contains">MSSE-</PipeName>
+        <PipeName condition="contains">kekeo</PipeName>
+        <PipeName condition="contains">tsssp</PipeName>
+        <PipeName condition="contains">\pipe\</PipeName>
+        <Rule name="Creación de spoolss ajena al spooler" groupRelation="and">
+          <PipeName condition="is">\spoolss</PipeName>
+          <EventType condition="is">CreatePipe</EventType>
+          <Image condition="is not">C:\Windows\System32\spoolsv.exe</Image>
+        </Rule>
+      </PipeEvent>
+    </RuleGroup>
+    <RuleGroup name="Persistencia WMI" groupRelation="or">
       <WmiEvent onmatch="exclude" />
     </RuleGroup>
-
-    <!-- Desactivados: mucho volumen y winlog-hunter aún no los usa -->
-    <RuleGroup name="Desactivados" groupRelation="or">
-      <FileCreateTime onmatch="include" />
+    <RuleGroup name="Manipulación de imagen" groupRelation="or">
+      <ProcessTampering onmatch="exclude" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado ProcessTerminate" groupRelation="or">
       <ProcessTerminate onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado DriverLoad" groupRelation="or">
       <DriverLoad onmatch="include" />
-      <ImageLoad onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado RawAccessRead" groupRelation="or">
       <RawAccessRead onmatch="include" />
-      <FileCreate onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileCreateStreamHash" groupRelation="or">
       <FileCreateStreamHash onmatch="include" />
-      <PipeEvent onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado DnsQuery" groupRelation="or">
       <DnsQuery onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileDelete" groupRelation="or">
       <FileDelete onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado ClipboardChange" groupRelation="or">
       <ClipboardChange onmatch="include" />
-      <ProcessTampering onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileDeleteDetected" groupRelation="or">
       <FileDeleteDetected onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileBlockExecutable" groupRelation="or">
       <FileBlockExecutable onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileBlockShredding" groupRelation="or">
       <FileBlockShredding onmatch="include" />
+    </RuleGroup>
+    <RuleGroup name="Evento no utilizado FileExecutableDetected" groupRelation="or">
       <FileExecutableDetected onmatch="include" />
     </RuleGroup>
-
   </EventFiltering>
 </Sysmon>

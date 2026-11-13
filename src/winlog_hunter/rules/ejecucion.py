@@ -75,6 +75,14 @@ def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "Binarios legítimos con argumentos de ejecución indirecta, carga de scripts o descarga remota.",
 )
 def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.event_id in (1040, 1042) and e.provider.lower() == "msiinstaller" and e.channel.lower() in {"application", ""}:
+            text = " ".join(e.data.values())
+            urls = re.findall(r'https?://[^\s"<>]+', text, re.I)
+            if urls:
+                yield Hit([e], f"Windows Installer procesó un paquete desde URL en {e.computer or UNKNOWN}",
+                          {"url": _truncate(urls[0]), "indicador": "paquete de instalación remoto"},
+                          severity="low", mitre=["T1218.007"])
     for p in _processes(events):
         exe = _exe(p.image)
         candidates = _LOLBINS + _MORE_LOLBINS
@@ -118,8 +126,18 @@ _SERVER_PARENTS = {"w3wp.exe", "httpd.exe", "tomcat.exe", "tomcat8.exe", "tomcat
 
 @rule("WLH-024", "Shell lanzada por un servidor o servicio", "high",
       ["T1505.003", "T1190", "T1021.003"],
-      "Servidores web, SQL, instalador o spooler abren intérpretes; activación DCOM inusual.")
+      "Servidores o servicios abren intérpretes, activación DCOM inusual y auditoría SQL de xp_cmdshell.")
 def server_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if not e.provider.lower().startswith("mssql"):
+            continue
+        enabled = e.event_id == 15457 and e.get("Data0", "OptionName").lower() == "xp_cmdshell" and e.get("Data2", "NewValue") == "1" and e.get("Data1", "OldValue") != "1"
+        statement = e.get("statement", "Statement", "Data0")
+        execution = e.event_id == 33205 and e.get("succeeded", "Succeeded").lower() not in {"false", "0"} and bool(re.search(r"\bexec(?:ute)?\s+(?:[\w\[\]]+\.){0,2}\[?xp_cmdshell\b", statement, re.I))
+        if enabled or execution:
+            yield Hit([e], f"SQL Server {'habilitó' if enabled else 'ejecutó'} xp_cmdshell en {e.computer or UNKNOWN}",
+                      {"indicador": "xp_cmdshell habilitado" if enabled else "ejecución de xp_cmdshell", "sentencia": _truncate(statement)},
+                      severity="medium", mitre=["T1505.001", "T1059.003"])
     for p in _processes(events):
         parent, child = _exe(p.parent), _exe(p.image)
         # Excel ya pertenece a WLH-012; WMI/WinRM a WLH-018.
@@ -170,14 +188,37 @@ def office_child_process(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "Script de PowerShell malicioso",
     "high",
     ["T1059.001"],
-    "Evento 4104 (Script Block Logging): el código ejecutado contiene volcado de LSASS, Mimikatz, evasión de AMSI, inyección...",
+    "PowerShell 4104, 4103 y 800: indicadores de volcado, AMSI, inyección, descarga dinámica y ofuscación combinada.",
 )
 def malicious_script_block(events: list[Event], cfg: Config) -> Iterator[Hit]:
-    seen: set[str] = set()
+    seen: set[tuple[str, int, str]] = set()
     for e in events:
-        text = e.get("ScriptBlockText") if e.event_id == 4104 else ""
-        found = [(name, mitre) for name, regex, mitre in _SCRIPT_BLOCK_INDICATORS if text and regex.search(text)]
-        block = e.get("ScriptBlockId") or text[:200]
+        if e.event_id == 4104:
+            text = e.get("ScriptBlockText")
+        elif e.event_id in (4103, 800) and ("powershell" in (e.channel + e.provider).lower()):
+            text = "\n".join(e.get(k) for k in ("Payload", "ContextInfo", "HostApplication", "Data0", "Data1", "Data2", "Message"))
+        else:
+            continue
+        normalized = text.replace("`", "")
+        for _ in range(6):
+            folded = re.sub(r"(['\"])([a-z0-9_.-]*)\1\s*\+\s*(['\"])([a-z0-9_.-]*)\3", lambda m: "'" + m[2] + m[4] + "'", normalized, flags=re.I)
+            if folded == normalized:
+                break
+            normalized = folded
+        found = [(name, mitre) for name, regex, mitre in _SCRIPT_BLOCK_INDICATORS if text and regex.search(normalized)]
+        dynamic = bool(re.search(r"\b(?:iex|invoke-expression)\b", normalized, re.I) and re.search(r"downloadstring|downloadfile|invoke-webrequest|\biwr\b", normalized, re.I))
+        download = bool(re.search(r"net\.webclient", normalized, re.I) and re.search(r"downloadfile", normalized, re.I))
+        obfuscation = (len(re.findall(r"\[char\]", normalized, re.I)) >= 4 or "-join" in normalized.lower()) and (dynamic or download)
+        temp_exec = bool(re.search(r"invoke-item[\s\S]{0,160}(?:%temp%|\$env:temp|\\temp\\)[\s\S]{0,160}\.exe\b", normalized, re.I))
+        if dynamic:
+            found.append(("descarga con ejecución dinámica", "T1059.001"))
+        if download:
+            found.append(("WebClient con descarga a fichero", "T1105"))
+        if obfuscation:
+            found.append(("ofuscación combinada con descarga o ejecución", "T1027"))
+        if temp_exec:
+            found.append(("ejecución de un fichero temporal", "T1059.001"))
+        block = (e.computer.lower(), e.event_id, e.get("ScriptBlockId") or text)
         if not found or block in seen:
             continue
         seen.add(block)
@@ -190,7 +231,8 @@ def malicious_script_block(events: list[Event], cfg: Config) -> Iterator[Hit]:
                 "fragmento": _truncate(text, 400),
             },
             mitre=sorted({"T1059.001", *(m for _, m in found)}),
-            severity="critical" if any(m.startswith("T1003") for _, m in found) else None,
+            severity="critical" if any(m.startswith("T1003") for _, m in found) else
+                     "high" if dynamic or obfuscation or any(m not in {"T1105", "T1059.001"} for _, m in found) or any(regex.search(normalized) for _, regex, _ in _SCRIPT_BLOCK_INDICATORS) else "low",
         )
 
 

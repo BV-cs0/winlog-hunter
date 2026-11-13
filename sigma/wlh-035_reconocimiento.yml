@@ -1,0 +1,121 @@
+title: 'Reconocimiento de cuentas, grupos y equipos'
+id: 8021f081-cdcf-4fa7-886b-18ee222e0035
+status: experimental
+description: 'Consultas individuales de grupos por procesos no habituales: bajas en el motor. Tres grupos distintos elevan a media. Las correlaciones RPC y de comandos se describen debajo.'
+references:
+    - https://attack.mitre.org/techniques/T1087/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.discovery
+    - attack.t1087
+    - attack.t1069
+    - attack.t1135
+    - attack.t1018
+logsource:
+    product: windows
+    service: security
+detection:
+    selection_query:
+        EventID:
+            - 4798
+            - 4799
+        CallerProcessName|contains: '\'
+    filter_normal:
+        CallerProcessName|re: '(?i)^[a-z]:\\windows\\((system32|syswow64|winsxs)\\.*(mmc|svchost|lsass|services)\.exe$|explorer\.exe$)'
+    selection_sam:
+        EventID: 4661
+        ObjectType: SAM_GROUP
+    condition: (selection_query and not filter_normal) or selection_sam
+falsepositives:
+    - Inventario y administración de grupos; consultas aisladas bajas
+level: low
+---
+title: 'Canal RPC de enumeración'
+id: 0eb2ec3b-757a-4d73-8693-f1e2129d0035
+name: wlh_enumeration_pipe
+status: experimental
+description: 'Base: el motor también excluye cuentas de equipo y accesos locales.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 5145
+        ShareName|endswith: 'IPC$'
+        RelativeTargetName:
+            - srvsvc
+            - samr
+            - lsarpc
+            - winreg
+            - wkssvc
+    condition: selection
+level: informational
+---
+title: 'Enumeración de varios canales RPC'
+id: a7026750-a7ce-4da3-b995-9e526d6b0035
+status: experimental
+description: 'Tres canales distintos en cinco minutos desde la misma cuenta y origen.'
+author: Bryan Valenzuela
+date: 2026-11-13
+correlation:
+    type: value_count
+    rules:
+        - wlh_enumeration_pipe
+    group-by:
+        - Computer
+        - IpAddress
+        - SubjectUserName
+    timespan: 5m
+    condition:
+        field: RelativeTargetName
+        gte: 3
+level: medium
+---
+title: 'Comando de reconocimiento de dominio'
+id: efacdf0c-fce7-4e87-9fd2-591b2ac40035
+name: wlh_recon_command
+status: experimental
+description: 'Base de la ráfaga; una consulta administrativa aislada no basta.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection_net:
+        Image|re: '(?i)\\net1?\.exe$'
+        CommandLine|re: '(?i)\b(user|group|localgroup)\b.* /domain\b'
+    selection_nltest:
+        Image|endswith: '\nltest.exe'
+        CommandLine|re: '(?i)/(dclist|domain_trusts)\b'
+    selection_tools:
+        Image|endswith:
+            - '\dsquery.exe'
+            - '\adfind.exe'
+    filter_help:
+        CommandLine|re: '(?i)(^|\s)[-/](\?|help)'
+    condition: (selection_net or selection_nltest or selection_tools) and not filter_help
+level: informational
+---
+title: 'Ráfaga de comandos de reconocimiento'
+id: e9b48685-0141-41e7-8cf0-01e1a15e0035
+status: experimental
+description: 'Tres comandos distintos de la misma cuenta y equipo en cinco minutos.'
+author: Bryan Valenzuela
+date: 2026-11-13
+correlation:
+    type: value_count
+    rules:
+        - wlh_recon_command
+    group-by:
+        - Computer
+        - User
+    timespan: 5m
+    condition:
+        field: CommandLine
+        gte: 3
+level: medium
+# winlog-hunter: WLH-035

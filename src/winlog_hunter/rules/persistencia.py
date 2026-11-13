@@ -10,6 +10,7 @@ from ..parsers import parse_timestamp
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, _INSTALLERS, _PERSISTENCE_KEYS, _REMOTE_EXEC_SERVICE, _SUSPICIOUS_COMMAND, _TASK_ARGS, _TASK_COMMAND, _bursts, _exe, _is_sysmon, _privileged_group, _truncate, defaultdict, html, rule)
 from .base import (_SHELLS, _browser_root, _maintenance_process, _processes, _program_files_path,
                    _user_path, _windows_path)
+from .base import _REPLICATION_GUIDS
 
 
 _EXTRA_PERSISTENCE_KEYS = [
@@ -295,5 +296,49 @@ def suspicious_files(events: list[Event], cfg: Config) -> Iterator[Hit]:
                       {"indicador": reason, "fichero": target, "proceso": image,
                        "fecha_anterior": e.get("PreviousCreationUtcTime"), "fecha_nueva": e.get("CreationUtcTime")},
                       severity=severity, mitre=[technique])
+
+
+@rule("WLH-033", "Cambios peligrosos en Active Directory", "high", ["T1098", "T1207", "T1134.005", "T1222.001"],
+      "Derechos de replicación, delegación, credenciales alternativas, SID History, DSRM y cuentas de equipo atípicas.")
+def dangerous_ad_changes(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    privileged: set[str] = set()
+    for e in events:
+        if e.channel.lower() != "security" and "security-auditing" not in e.provider.lower():
+            continue
+        if e.event_id in (4728, 4732, 4756) and _privileged_group(e)[0] and e.get("MemberSid"):
+            privileged.add(e.get("MemberSid").lower())
+        reason, severity, mitre = "", "high", ["T1098"]
+        attribute, value = e.get("AttributeLDAPDisplayName").lower(), e.get("AttributeValue")
+        if e.event_id == 5136 and e.get("OperationType").lower() in {"%%14674", "value added", "valor agregado", "valor añadido"} and value:
+            if attribute == "ntsecuritydescriptor" and any(g in value.lower() for g in _REPLICATION_GUIDS):
+                # Solo ACE de permiso (OA/AU no son equivalentes: AU es auditoría).
+                if re.search(r"\((?:oa|a);[^)]*(?:" + "|".join(_REPLICATION_GUIDS) + r")[^)]*\)", value, re.I):
+                    reason, mitre = "descriptor que concede derechos de replicación", ["T1222.001", "T1003.006"]
+            elif attribute == "msds-allowedtoactonbehalfofotheridentity":
+                reason = "delegación restringida basada en recursos modificada"
+            elif attribute == "msds-keycredentiallink":
+                reason, severity = "credencial de clave añadida a una cuenta (también usada por Windows Hello)", "medium"
+            elif attribute == "serviceprincipalname" and e.get("ObjectClass").lower() == "user":
+                reason, severity = "SPN añadido a una cuenta de usuario", "medium"
+        elif e.event_id == 4742:
+            spns = e.get("ServicePrincipalNames", "ServicePrincipalName")
+            if re.search(r"(?:^|\s)(?:gc/|e3514235-4b06-11d1-ab04-00c04fc2dcd2/)", spns, re.I):
+                # Un DC publica esos SPN legítimamente: indicio bajo sin inventario de DC.
+                reason, severity, mitre = "SPN de replicación publicado por una cuenta de equipo", "low", ["T1207"]
+            if e.get("SamAccountName") and not e.get("SamAccountName").endswith("$"):
+                reason, severity = "cuenta de equipo renombrada sin el sufijo dólar", "high"
+        elif e.event_id in (4765, 4766):
+            reason, severity, mitre = "intento de añadir SID History" if e.event_id == 4766 else "SID History añadido", "medium", ["T1134.005"]
+        elif e.event_id == 4794:
+            reason = "intento de cambio de contraseña DSRM"
+        elif e.event_id == 4724:
+            sid = e.get("TargetSid").lower()
+            if sid and (sid.endswith("-500") or sid in privileged):
+                reason, severity = "intento de restablecer contraseña de una cuenta privilegiada", "medium"
+        if reason:
+            yield Hit([e], f"{reason.capitalize()} en {e.computer or UNKNOWN}",
+                      {"indicador": reason, "usuario": e.get("SubjectUserName"), "cuenta": e.get("TargetUserName"),
+                       "objeto": e.get("ObjectDN"), "atributo": e.get("AttributeLDAPDisplayName"), "valor": _truncate(value)},
+                      severity=severity, mitre=mitre)
 
 

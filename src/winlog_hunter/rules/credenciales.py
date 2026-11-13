@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .base import (AccountKey, Any, Config, Event, Hit, Iterator, UNKNOWN, _DUMP_COMMANDS, _DUMP_TOOLS, _LSASS_ALLOWED, _PROCESS_VM_READ, _REPLICATION_GUIDS, _account_key, _bursts, _duration, _exe, _failed_logons, _failure_reasons, _is_sysmon, _is_system_account, _logon_label, _logon_types, _processes, _source, _truncate, _user, bisect_left, bisect_right, defaultdict, rule)
 
 @rule(
@@ -9,7 +11,7 @@ from .base import (AccountKey, Any, Config, Event, Hit, Iterator, UNKNOWN, _DUMP
     "Fuerza bruta de credenciales",
     "high",
     ["T1110.001"],
-    "Muchos inicios de sesión fallidos (4625) contra la misma cuenta y desde el mismo origen en poco tiempo.",
+    "Muchos fallos 4625 o MSSQL 18456 contra la misma cuenta y desde el mismo origen en poco tiempo.",
 )
 def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for (_, _, _, source), evs in _failed_logons(events).items():
@@ -26,6 +28,17 @@ def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     "motivos": _failure_reasons(burst),
                 },
             )
+    sql: dict[tuple[str, str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if e.event_id == 18456 and e.provider.lower().startswith("mssql"):
+            user = e.get("UserName", "Data0")
+            client = re.search(r"\[CLIENT:\s*([^\]]+)\]", e.get("Data2", "Message"), re.I)
+            if user and client:
+                sql[(e.computer.lower(), user, client.group(1).strip())].append(e)
+    for (_, user, source), evs in sql.items():
+        for burst in _bursts(evs, cfg.window, cfg.brute_force_threshold):
+            yield Hit(burst, f"{len(burst)} fallos de autenticación SQL para '{user}' desde {source}",
+                      {"usuario": user, "origen": source, "intentos": len(burst), "servicio": "SQL Server"})
 
 
 @rule(
@@ -33,7 +46,7 @@ def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "Password spraying",
     "high",
     ["T1110.003"],
-    "Un mismo origen falla el inicio de sesión contra muchas cuentas distintas en poco tiempo.",
+    "Un mismo origen falla contra muchas cuentas: 4625 o Kerberos 4768/4771 con errores de credenciales.",
 )
 def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[str, list[Event]] = defaultdict(list)
@@ -54,6 +67,17 @@ def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     "motivos": _failure_reasons(burst),
                 },
             )
+    kerberos: dict[tuple[str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if not _security(e) or not _user(e) or _is_system_account(_user(e)) or _source(e) == UNKNOWN:
+            continue
+        status = e.get("Status", "FailureCode").lower()
+        if e.event_id in (4771, 4768) and status in {"0x18", "0x6"}:
+            kerberos[(e.computer.lower(), _source(e))].append(e)
+    for (_, source), evs in kerberos.items():
+        for burst in _bursts(evs, cfg.window, cfg.spray_min_accounts, distinct=lambda x: _user(x).lower()):
+            yield Hit(burst, f"Fallos Kerberos contra varias cuentas desde {source}",
+                      {"origen": source, "cuentas": sorted({_user(x) for x in burst}), "intentos": len(burst)})
 
 
 @rule(
@@ -138,7 +162,7 @@ def lsass_access(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "Comando de volcado de credenciales",
     "critical",
     ["T1003"],
-    "Sysmon 1/4688: comsvcs MiniDump, procdump contra LSASS, ntdsutil IFM, reg save de SAM o comandos de Mimikatz.",
+    "Comandos de volcado en Sysmon 1/4688, monitor de salida de LSASS 3001 y copias de ntds.dit en ESENT 325-327.",
 )
 def credential_dump_command(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
@@ -157,6 +181,72 @@ def credential_dump_command(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     mitre=[mitre],
                 )
                 break
+    for e in events:
+        reason, mitre = "", "T1003.001"
+        if e.channel.lower() not in ("application", ""):
+            continue
+        if e.event_id == 3001 and e.provider.lower() == "microsoft-windows-processexitmonitor" and _exe(e.get("param1", "ProcessName")) == "lsass.exe":
+            reason = "monitor de salida silenciosa activado sobre LSASS"
+        elif e.event_id in (325, 326, 327) and e.provider.lower() == "esent":
+            path = e.get("Data4", "DatabasePath")
+            if _exe(path) == "ntds.dit" and not re.search(r"^[a-z]:\\windows\\ntds\\ntds\.dit$", path, re.I) and not re.search(r"\\\$snap_[^\\]+\\windows\\ntds\\", path, re.I):
+                reason, mitre = "base de Active Directory abierta fuera de su directorio normal", "T1003.003"
+        if reason:
+            yield Hit([e], f"{reason.capitalize()} en {e.computer or UNKNOWN}",
+                      {"indicador": reason, "ruta": e.get("Data4", "DatabasePath", "param1"),
+                       "proceso": e.get("param2")}, severity="medium" if mitre == "T1003.003" else "high", mitre=[mitre])
+
+
+def _security(e: Event) -> bool:
+    """Evita confundir IDs de otros proveedores con eventos de seguridad."""
+    return e.channel.lower() == "security" or "security-auditing" in e.provider.lower()
+
+
+def _anonymous(e: Event, prefix: str) -> bool:
+    return e.get(prefix + "UserSid", prefix + "Sid").upper() == "S-1-5-7" or e.get(prefix + "UserName").lower() in {"anonymous logon", "inicio de sesión anónimo"}
+
+
+@rule("WLH-032", "Indicios de ataques a Kerberos y NTLM", "medium", ["T1558.004", "T1550.002", "T1210"],
+      "AS-REP sin preautenticación, logon NTLM atípico y correlación de acceso anónimo con cambio de la cuenta del DC.")
+def kerberos_ntlm(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    groups: dict[tuple[str, str, str, str, str], list[Event]] = defaultdict(list)
+    anonymous: dict[tuple[str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if not _security(e):
+            continue
+        reason, severity, mitre = "", "medium", "T1558.004"
+        if e.event_id == 4768 and e.get("PreAuthType") == "0" and e.get("Status").lower() in ("", "0x0") and _user(e) and not _is_system_account(_user(e)):
+            reason = "ticket Kerberos emitido sin preautenticación"
+        elif e.event_id == 4624:
+            if e.get("LogonType") == "3" and _anonymous(e, "Target") and e.get("TargetLogonId"):
+                anonymous[(e.computer.lower(), e.get("TargetLogonId").lower())].append(e)
+            if not _user(e) or _is_system_account(_user(e)) or _anonymous(e, "Target"):
+                continue
+            netonly = e.get("LogonType") == "9" and e.get("LogonProcessName").lower() == "seclogo"
+            ntlm = e.get("LogonType") == "3" and e.get("AuthenticationPackageName").lower() == "ntlm" and e.get("KeyLength") == "0"
+            if netonly or ntlm:
+                reason, severity, mitre = "logon compatible con uso de credenciales alternativas (también legítimo)", "low", "T1550.002"
+        elif e.event_id == 4742 and _anonymous(e, "Subject"):
+            account = e.get("TargetUserName")
+            host = e.computer.split(".", 1)[0]
+            prior = anonymous.get((e.computer.lower(), e.get("SubjectLogonId").lower()), [])
+            if not prior and e.get("SubjectLogonId").lower() == "0x3e6":
+                # Windows puede usar el LUID anónimo conocido, distinto del logon de red.
+                prior = [x for (host_key, _), values in anonymous.items() if host_key == e.computer.lower() for x in values]
+            prior = [x for x in prior if e.timestamp - cfg.window <= x.timestamp <= e.timestamp]
+            if prior and account.endswith("$") and account[:-1].lower() == host.lower():
+                recent = max(prior, key=lambda x: x.timestamp)
+                yield Hit([recent, e], f"Sesión anónima seguida de cambio de la cuenta del controlador en {e.computer}",
+                          {"cuenta": account, "id_de_logon": e.get("SubjectLogonId"), "origen": _source(recent)},
+                          severity="high", mitre=["T1210"])
+        if reason:
+            groups[(e.computer.lower(), _user(e), _source(e), reason, mitre)].append(e)
+    for (_, user, source, reason, mitre), evs in groups.items():
+        for burst in _bursts(evs, cfg.window, 1):
+            yield Hit(burst, f"{reason.capitalize()} para '{user}'", {"usuario": user, "indicador": reason, "origen": source,
+                      "tipos_de_logon": sorted({x.get("LogonType") for x in burst if x.get("LogonType")}),
+                      "procesos_de_logon": sorted({x.get("LogonProcessName") for x in burst if x.get("LogonProcessName")})},
+                      severity="low" if mitre == "T1550.002" else "medium", mitre=[mitre])
 
 
 @rule(

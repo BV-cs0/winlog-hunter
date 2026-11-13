@@ -6,6 +6,7 @@ import re
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, _INSTALLERS, _SHELLS,
                    _exe, _is_sysmon, _processes, _truncate, _windows_path, rule)
+from .base import _debugger_process, _maintenance_process, _program_files_path
 
 
 # ATT&CK T1548.002: secuestros por usuario y carga lateral en autoelevables.
@@ -70,3 +71,51 @@ def uac_bypass(events: list[Event], cfg: Config) -> Iterator[Hit]:
             yield Hit([p.event], f"Posible bypass de UAC: {reason} en {p.event.computer or UNKNOWN}",
                       {"indicador": reason, "proceso": p.image, "proceso_padre": p.parent,
                        "línea_de_comandos": _truncate(p.command_line)}, severity=severity)
+
+
+@rule("WLH-034", "Privilegios y ajustes peligrosos del sistema", "medium", ["T1134", "T1553.006", "T1562"],
+      "Privilegios sensibles fuera de procesos habituales, arranque inseguro, retirada de auditoría o parada de EventLog.")
+def system_privileges(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        security = e.channel.lower() == "security" or "security-auditing" in e.provider.lower()
+        reason, severity, mitre = "", "medium", ["T1134"]
+        image = e.get("ProcessName", "Image")
+        related_events = [e]
+        if security and e.event_id in (4703, 4673):
+            privileges = e.get("EnabledPrivilegeList") if e.event_id == 4703 else e.get("PrivilegeList")
+            sensitive = sorted(set(re.findall(r"Se(?:Debug|Tcb|Impersonate)Privilege", privileges, re.I)))
+            if sensitive and image and not _windows_path(image) and not _debugger_process(image) and not _maintenance_process(image):
+                if not re.fullmatch(r"[a-z]:\\windows\\(?:syswow64\\)?explorer\.exe", image, re.I):
+                    reason = "privilegios sensibles habilitados" if e.event_id == 4703 else "uso de un servicio con privilegios sensibles"
+                    severity = "low" if _program_files_path(image) or e.event_id == 4673 else "medium"
+        elif security and e.event_id == 4826:
+            labels = {"KernelDebug": "depuración de kernel", "TestSigning": "firma de prueba", "DisableIntegrityChecks": "comprobación de integridad desactivada"}
+            enabled = [label for key, label in labels.items() if e.get(key).lower() in {"%%1842", "yes", "true", "1", "enabled"}]
+            if enabled:
+                reason, mitre = "arranque con " + ", ".join(enabled), ["T1553.006"]
+        elif security and e.event_id == 4719 and re.search(r"success removed|failure removed|éxitos quitados|errores quitados|%%8448|%%8450", e.get("AuditPolicyChanges"), re.I):
+            reason, severity, mitre = "retirada de auditoría de seguridad", "high", ["T1562.002"]
+        elif e.event_id in (7036, 7040) and e.channel.lower() == "system" and e.provider.lower() in {"service control manager", ""}:
+            service = e.get("param1", "ServiceName").lower()
+            stopped = e.get("param2", "State").lower() in {"stopped", "detenido", "parado"}
+            disabled = e.get("param3", "StartType").lower() in {"disabled", "deshabilitado"}
+            if service in {"eventlog", "windows event log", "registro de eventos de windows"} and ((e.event_id == 7036 and stopped) or (e.event_id == 7040 and disabled)):
+                reason, severity, mitre = "servicio de registro de eventos parado o deshabilitado", "high", ["T1562.002"]
+        elif security and e.event_id == 4985 and e.get("ProcessId", "ProcessID"):
+            def pid(value):
+                try:
+                    return int(value, 16 if value.lower().startswith("0x") else 10)
+                except ValueError:
+                    return None
+            process_id = pid(e.get("ProcessId", "ProcessID"))
+            related = [x for x in events if x.computer.lower() == e.computer.lower() and _is_sysmon(x) and x.event_id == 25
+                       and abs((x.timestamp - e.timestamp).total_seconds()) <= cfg.window.total_seconds()
+                       and process_id is not None and pid(x.get("ProcessId")) == process_id]
+            if related:
+                reason, severity, mitre = "transacción NTFS junto a manipulación de la misma imagen de proceso", "high", ["T1055.013"]
+                related_events = sorted([e, related[0]], key=lambda x: x.timestamp)
+        if reason:
+            yield Hit(related_events, f"{reason.capitalize()} en {e.computer or UNKNOWN}",
+                      {"indicador": reason, "proceso": image, "privilegios": e.get("EnabledPrivilegeList", "PrivilegeList"),
+                       "usuario": e.get("SubjectUserName"), "cambio": e.get("AuditPolicyChanges"),
+                       "pid": e.get("ProcessId", "ProcessID")}, severity=severity, mitre=mitre)

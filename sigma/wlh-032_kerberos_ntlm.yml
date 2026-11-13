@@ -1,0 +1,92 @@
+title: 'Indicios de ataques a Kerberos y NTLM'
+id: 7bf21f01-e099-48ee-88d5-305049750032
+status: experimental
+description: 'AS-REP sin preautenticación y credenciales alternativas. Los logon tipo 9 seclogo y tipo 3 NTLM KeyLength 0 son bajos en el motor, porque también son legítimos. El spraying se mantiene en WLH-002.'
+references:
+    - https://attack.mitre.org/techniques/T1558/004/
+    - https://attack.mitre.org/techniques/T1550/002/
+author: Bryan Valenzuela
+date: 2026-11-13
+tags:
+    - attack.credential_access
+    - attack.t1558.004
+    - attack.t1550.002
+logsource:
+    product: windows
+    service: security
+detection:
+    selection_asrep:
+        EventID: 4768
+        PreAuthType: '0'
+        Status: '0x0'
+    selection_netonly:
+        EventID: 4624
+        LogonType: 9
+        LogonProcessName: seclogo
+    selection_ntlm:
+        EventID: 4624
+        LogonType: 3
+        AuthenticationPackageName: NTLM
+        KeyLength: 0
+    filter_machine:
+        TargetUserName|endswith: '$'
+    filter_anonymous:
+        TargetUserSid: 'S-1-5-7'
+    condition: (selection_asrep or selection_netonly or selection_ntlm) and not filter_machine and not filter_anonymous
+falsepositives:
+    - Cuentas sin preautenticación por compatibilidad
+    - runas /netonly y autenticación NTLM legítima; severidad baja
+level: medium
+---
+title: 'Sesión de red anónima'
+id: 2d43db8f-c553-4cb6-8900-8120086e0032
+name: wlh_anonymous_network
+status: experimental
+description: 'Base de correlación; no alerta por sí sola.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4624
+        LogonType: 3
+        TargetUserSid: 'S-1-5-7'
+    condition: selection
+level: informational
+---
+title: 'Cambio de cuenta de equipo por sesión anónima'
+id: b9ab1c50-81fd-4f12-bda7-bea7ce8f0032
+name: wlh_anonymous_machine_change
+status: experimental
+description: 'El motor exige además que sea la cuenta del propio equipo y el mismo LUID o el LUID anónimo conocido 0x3e6.'
+author: Bryan Valenzuela
+date: 2026-11-13
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4742
+        SubjectUserSid: 'S-1-5-7'
+        TargetUserName|endswith: '$'
+    condition: selection
+level: informational
+---
+title: 'Cambio de cuenta de máquina tras acceso anónimo'
+id: 7a26711f-379a-44b3-8526-138f96a30032
+status: experimental
+description: 'Aproximación temporal a la correlación de Zerologon del motor.'
+author: Bryan Valenzuela
+date: 2026-11-13
+correlation:
+    type: temporal_ordered
+    rules:
+        - wlh_anonymous_network
+        - wlh_anonymous_machine_change
+    group-by:
+        - Computer
+    timespan: 5m
+level: high
+# winlog-hunter: WLH-032

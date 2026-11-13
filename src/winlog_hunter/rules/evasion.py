@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import ntpath
+import ipaddress
+from urllib.parse import urlsplit
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
@@ -223,5 +225,58 @@ def log_cleared(events: list[Event], cfg: Config) -> Iterator[Hit]:
             f"Se borró el registro '{log}' en {e.computer or UNKNOWN}" + (f" (usuario: {who})" if who else ""),
             {"registro": log, "usuario": who, "dominio": e.get("SubjectDomainName")},
         )
+
+
+def _external_url(value: str) -> bool:
+    """URL HTTP externa sin consultas DNS ni acceso a la red."""
+    try:
+        url = urlsplit(value)
+        host = url.hostname or ""
+        if url.scheme.lower() not in {"http", "https"} or not host or host.lower() == "localhost":
+            return False
+        try:
+            return ipaddress.ip_address(host).is_global
+        except ValueError:
+            return "." in host and not host.lower().endswith((".local", ".lan", ".internal"))
+    except ValueError:
+        return False
+
+
+@rule("WLH-036", "Alertas de Defender y trabajos BITS sospechosos", "high", ["T1562.001", "T1197"],
+      "Detecciones de malware y desactivación de Defender; descargas BITS externas fuera del mantenimiento habitual.")
+def defender_bits(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    jobs: dict[tuple[str, str], str] = {}
+    for e in events:
+        reason, severity, mitre = "", "high", ["T1562.001"]
+        defender = e.provider.lower() == "microsoft-windows-windows defender" or e.channel.lower() == "microsoft-windows-windows defender/operational"
+        bits = e.provider.lower() == "microsoft-windows-bits-client" or e.channel.lower() == "microsoft-windows-bits-client/operational"
+        image = e.get("processPath", "ProcessPath", "ProcessName")
+        url = e.get("url", "RemoteName", "remoteName", "RemoteUrl", "URL")
+        if defender:
+            if e.event_id in (1116, 1117, 1006, 1015):
+                reason = "Defender notificó malware o una acción sobre la amenaza"
+            elif e.event_id == 5001:
+                reason = "protección en tiempo real de Defender desactivada"
+            elif e.event_id == 5007:
+                new, old = e.get("New Value", "NewValue"), e.get("Old Value", "OldValue")
+                if new and new != old and re.search(r"\\exclusions\\(?:paths|processes|extensions)\\", new, re.I):
+                    reason, severity = "configuración de exclusiones de Defender modificada", "low"
+        elif bits and e.event_id in (3, 59, 60):
+            job = (e.computer.lower(), e.get("jobId", "JobId", "Id"))
+            if image and job[1]:
+                jobs[job] = image
+            image = image or jobs.get(job, "")
+            if _maintenance_process(image) or (_windows_path(image) and _exe(image) == "svchost.exe"):
+                continue
+            target = e.get("LocalName", "localName", "jobTitle", "JobTitle")
+            executable = bool(re.search(r"\.(?:exe|dll|ps1|vbs|js|msi)(?:$|\?)", url or target, re.I))
+            local_interpreter = _exe(url) in {"cmd.exe", "powershell.exe", "pwsh.exe", "regsvr32.exe", "rundll32.exe", "mshta.exe", "wscript.exe", "cscript.exe"}
+            if _external_url(url) or (e.event_id == 3 and executable) or local_interpreter:
+                reason, severity, mitre = "trabajo BITS con descarga externa o ejecutable", "medium" if executable and url else "low", ["T1197"]
+        if reason:
+            yield Hit([e], f"{reason.capitalize()} en {e.computer or UNKNOWN}",
+                      {"indicador": reason, "amenaza": e.get("Threat Name", "ThreatName"), "proceso": image,
+                       "url": _truncate(url), "trabajo": e.get("jobTitle", "JobTitle"),
+                       "valor_nuevo": _truncate(e.get("New Value", "NewValue"))}, severity=severity, mitre=mitre)
 
 
