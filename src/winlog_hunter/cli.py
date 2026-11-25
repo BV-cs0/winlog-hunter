@@ -9,7 +9,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from . import __version__
+from . import __version__, actualizacion
 from .models import SEVERITIES, SEVERITY_ORDER
 from .parsers import load_events
 from .report import RENDERERS, SEVERITY_LABEL, Stats, render_console
@@ -373,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     args = parser.parse_args(argv)
+    actualizacion.iniciar(__version__)
     if args.command == "rules":
         return _list_rules()
     if args.command == "equipo":

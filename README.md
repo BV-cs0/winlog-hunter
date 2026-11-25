@@ -18,6 +18,8 @@ No tiene dependencias obligatorias. En Linux o macOS, para leer ficheros `.evtx`
 
 Para actualizar a la última versión: `python -m pip install --upgrade winlog-hunter`. Para comprobar que funciona: `winlog-hunter --version`.
 
+**Aviso de versión nueva.** Cuando lo usas en una consola, winlog-hunter consulta PyPI en segundo plano, como mucho una vez al día y con un tiempo límite de 3 segundos. Si hay una versión nueva, al arrancar la siguiente vez muestra una sola línea con el comando para actualizar. Avisa una sola vez por versión. Nunca se actualiza solo ni toca tu instalación de Python. Sin consola interactiva (la tarea diaria, tuberías, CI) no consulta nada. Si falla la red, no pasa nada. Para desactivarlo, define la variable de entorno `WINLOG_HUNTER_SIN_AVISO_VERSION=1`. Los cambios de cada versión están en [Releases](https://github.com/BV-cs0/winlog-hunter/releases).
+
 > **¿Windows dice que no reconoce `winlog-hunter`?** Algunas instalaciones de Python no ponen su carpeta `Scripts` en el PATH. Usa `python -m winlog_hunter` (con guion bajo), por ejemplo `python -m winlog_hunter equipo`: funciona igual y, de paso, añade esa carpeta al PATH de tu usuario. Desde la siguiente consola que abras, `winlog-hunter` funcionará directamente.
 
 ## Uso
@@ -222,6 +224,7 @@ src/winlog_hunter/
   report.py    informe en consola, HTML, Markdown y JSON
   local.py     análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación
   pathfix.py   deja el comando winlog-hunter en el PATH si pip no lo hizo
+  actualizacion.py   aviso de una línea si hay versión nueva en PyPI (nunca se actualiza solo)
   data/sysmon.xml   configuración de Sysmon para las reglas
   cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules)
 sigma/         las reglas en formato Sigma
