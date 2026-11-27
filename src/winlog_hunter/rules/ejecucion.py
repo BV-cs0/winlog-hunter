@@ -35,7 +35,9 @@ _MORE_LOLBINS = [(name, re.compile(pattern, re.I), [mitre], label)
 # Banderas de arranque: dicen cómo se lanza PowerShell, no qué hace. Instaladores y herramientas
 # legítimas (VS Code, Al Día, gestores de versiones) las usan a diario.
 _BANDERAS_DE_ARRANQUE = {"ventana oculta", "sin perfil", "bypass de política"}
-_SCRIPT = re.compile(r'(?:^|\s)[-/]f(?:ile)?\s+(?:"([^"]+)"|(\S+))', re.I)
+# El primer -Command o -File decide: lo que va detrás de -Command es texto del comando,
+# aunque contenga «-File» (Get-ChildItem -File).
+_SCRIPT = re.compile(r'(?:^|\s)[-/](?:(c(?:ommand)?)|f(?:ile)?)\s+(?:"([^"]+)"|(\S+))', re.I)
 
 
 def _solo_banderas_rutinarias(command_line: str, indicators: list[str]) -> bool:
@@ -46,9 +48,9 @@ def _solo_banderas_rutinarias(command_line: str, indicators: list[str]) -> bool:
     if not set(indicators) <= _BANDERAS_DE_ARRANQUE:
         return False
     script = _SCRIPT.search(command_line)
-    if not script:
+    if not script or script.group(1):
         return True
-    ruta = script.group(1) or script.group(2)
+    ruta = script.group(2) or script.group(3)
     return _program_files_path(ruta) or _windows_path(ruta, ("system32", "syswow64"))
 
 

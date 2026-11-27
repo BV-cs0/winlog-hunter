@@ -129,6 +129,8 @@ class ExecutionRules(unittest.TestCase):
             '-Command "Get-AppxPackage -Name \'Microsoft.VisualStudioCode\'"',
             r'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Aldia\aldia.ps1" actualizar --programado',
             r'powershell.exe -WindowStyle Hidden -NoProfile -STA -ExecutionPolicy Bypass -File "C:\Program Files\Aldia\aldia.ps1" gui',
+            # «-File» dentro del comando es un parámetro de Get-ChildItem, no un script.
+            'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath $base -File | Unblock-File"',
         ]
         for linea in rutinarios:
             with self.subTest(linea=linea):
