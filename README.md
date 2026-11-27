@@ -219,18 +219,18 @@ python -m pip uninstall winlog-hunter
 
 ```text
 src/winlog_hunter/
-  parsers.py   lectura de EVTX / XML / JSON y normalización de eventos
-  rules.py     las 21 reglas de detección mapeadas a MITRE ATT&CK
-  report.py    informe en consola, HTML, Markdown y JSON
-  local.py     análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación
-  pathfix.py   deja el comando winlog-hunter en el PATH si pip no lo hizo
+  parsers.py         lectura de EVTX / XML / JSON y normalización de eventos
+  rules.py           las 21 reglas de detección mapeadas a MITRE ATT&CK
+  report.py          informe en consola, HTML, Markdown y JSON
+  local.py           análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación
+  pathfix.py         deja el comando winlog-hunter en el PATH si pip no lo hizo
   actualizacion.py   aviso de una línea si hay versión nueva en PyPI (nunca se actualiza solo)
-  data/sysmon.xml   configuración de Sysmon para las reglas
-  cli.py       comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules)
-sigma/         las reglas en formato Sigma
-docs/          captura del informe
-samples/       datos sintéticos que usan los tests
-tests/         tests automáticos
+  cli.py             comando winlog-hunter (analyze, equipo, programar, auditoria, sysmon, desinstalar, rules)
+  data/sysmon.xml    configuración de Sysmon para las reglas
+sigma/               las reglas en formato Sigma
+docs/                captura del informe
+samples/             datos sintéticos que usan los tests
+tests/               tests automáticos
 ```
 
 Úsalo solo con logs de equipos que tengas autorización para analizar. Licencia MIT.
