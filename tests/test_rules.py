@@ -235,10 +235,18 @@ class LateralMovementAndPersistenceRules(unittest.TestCase):
             reg(3, r"C:\Windows\regedit.exe",
                 r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe\Debugger",
                 r"C:\Windows\System32\cmd.exe"),
+            # Fuera de Program Files el destino ya no es rutinario.
+            reg(4, r"C:\Program Files\App\updater.exe", run, r"C:\Tools\app.exe"),
+            # Limpieza de Edge tras actualizarse: Program Files que apunta a Program Files.
+            reg(5, r"C:\Program Files (x86)\Microsoft\Edge\Application\158.0.4370.45\Installer\setup.exe",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce\msedge_cleanup_{56EB18F8}",
+                r'"C:\Program Files (x86)\Microsoft\Edge\Application\158.0.4370.45\Installer\setup.exe" --msedge '
+                r'--channel=stable --delete-old-versions --system-level --verbose-logging --on-logon'),
         ]
         findings = sorted(run_rules(events), key=lambda f: f.first_seen)
         self.assertEqual([(f.severity, f.mitre) for f in findings],
-                         [("high", ["T1547.001"]), ("medium", ["T1547.001"]), ("high", ["T1546.012"])])
+                         [("high", ["T1547.001"]), ("low", ["T1547.001"]), ("high", ["T1546.012"]),
+                          ("medium", ["T1547.001"]), ("low", ["T1547.001"])])
 
     def test_wmi_subscription_is_one_finding(self):
         events = [

@@ -149,6 +149,17 @@ def privileged_group_add(events: list[Event], cfg: Config) -> Iterator[Hit]:
         )
 
 
+def _severidad_run(image: str, details: str) -> str:
+    """Run/RunOnce sin nada sospechoso: baja si un programa de Program Files apunta a Program Files.
+
+    Edge, Copilot y WebView2 dejan así su limpieza tras cada actualización (msedge_cleanup).
+    """
+    # Sin comillas, Windows admite espacios en la ruta: se toma hasta el primer .exe.
+    objetivo = re.match(r'\s*(?:"([^"]+)"|(.+?\.exe\b|\S+))', details or "", re.I)
+    ruta = (objetivo.group(1) or objetivo.group(2)) if objetivo else ""
+    return "low" if _program_files_path(image) and _program_files_path(ruta) else "medium"
+
+
 @rule(
     "WLH-019",
     "Persistencia en el registro",
@@ -184,7 +195,7 @@ def registry_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     "usuario": e.get("User"),
                 },
                 mitre=mitre,
-                severity="medium" if "Run" in label and not suspicious else None,
+                severity=_severidad_run(image, details) if "Run" in label and not suspicious else None,
             )
             break
         else:
