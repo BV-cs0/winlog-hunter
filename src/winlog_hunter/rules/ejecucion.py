@@ -299,6 +299,22 @@ def _routine_thread_source(source: str, target: str) -> bool:
                          r"sysmon\\sysmon(?:64a?|)\.exe)$", source, re.I))
 
 
+_INICIO_DEL_KERNEL = 0xFFFF800000000000
+
+
+def _hilo_de_kernel(e: Event, source: str, target: str) -> bool:
+    """Hilo entre procesos de System32 que empieza en memoria del kernel (dwm.exe -> csrss.exe).
+
+    Windows los crea para sus propias tareas; un programa normal no puede poner un hilo
+    que empiece en una dirección del kernel.
+    """
+    try:
+        direccion = int(e.get("StartAddress"), 16)
+    except ValueError:
+        return False
+    return direccion >= _INICIO_DEL_KERNEL and _windows_path(source, ("system32",)) and _windows_path(target, ("system32",))
+
+
 @rule("WLH-026", "Posible inyección de código", "high", ["T1055"],
       "Sysmon 8/10/25: hilos remotos, acceso con escritura y creación de hilos, pila sin módulo o manipulación de imagen.", eventos={8, 25, 10})
 def code_injection(events: list[Event], cfg: Config) -> Iterator[Hit]:
@@ -311,7 +327,7 @@ def code_injection(events: list[Event], cfg: Config) -> Iterator[Hit]:
         if e.event_id == 25:
             reason = "Sysmon notificó manipulación de la imagen del proceso"
         elif e.event_id == 8:
-            if not source or not target or _routine_thread_source(source, target):
+            if not source or not target or _routine_thread_source(source, target) or _hilo_de_kernel(e, source, target):
                 continue
             reason = "creación de un hilo en otro proceso"
             severity = "high" if _user_path(source) else "medium"

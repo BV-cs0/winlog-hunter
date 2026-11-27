@@ -37,6 +37,15 @@ class InjectionRules(unittest.TestCase):
         self.assertTrue(hits("WLH-026", sm(8, SourceImage=USER + "MsMpEng.exe", TargetImage=SYSTEM + "notepad.exe")))
         self.assertTrue(hits("WLH-026", sm(8, SourceImage=r"C:\Program Files\Google\Chrome\Application\chrome.exe", TargetImage=SYSTEM + "notepad.exe")))
 
+    def test_kernel_thread_between_windows_processes_is_routine(self):
+        # dwm.exe -> csrss.exe con dirección del kernel: lo hace Windows en cualquier PC.
+        kernel = dict(SourceImage=r"C:\Windows\System32\dwm.exe", TargetImage=r"C:\Windows\System32\csrss.exe")
+        self.assertFalse(hits("WLH-026", sm(8, StartAddress="0xFFFFF8016E65D2E0", **kernel)))
+        # Con una dirección de usuario, o desde fuera de System32, sigue siendo sospechoso.
+        self.assertTrue(hits("WLH-026", sm(8, StartAddress="0x00007FF6A1B20000", **kernel)))
+        self.assertTrue(hits("WLH-026", sm(8, SourceImage=USER + "Downloads\\loader.exe", TargetImage=SYSTEM + "csrss.exe",
+                                           StartAddress="0xFFFFF8016E65D2E0")))
+
     def test_access_requires_real_injection_rights(self):
         for mask in ("0x1F0FFF", "0x1FFFFF", "0x143A", "0x1F3FFF"):
             self.assertEqual(hits("WLH-026", sm(10, SourceImage=USER + "loader.exe", TargetImage=SYSTEM + "notepad.exe", GrantedAccess=mask))[0].severity, "medium")
