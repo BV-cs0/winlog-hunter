@@ -61,7 +61,7 @@ class Exclusiones(unittest.TestCase):
         casos = [({}, 'exclusiones[0]'), ({'motivo': ' '}, '.motivo'),
                  ({'desconocida': 1}, '.desconocida'), ({'reglas': []}, '.reglas'),
                  ({'reglas': '*'}, '.reglas'), ({'reglas': [1]}, '.reglas[0]'),
-                 ({'reglas': ['WLH-037']}, '.reglas[0]'), ({'reglas': ['WLH-*']}, '.reglas[0]'),
+                 ({'reglas': ['WLH-999']}, '.reglas[0]'), ({'reglas': ['WLH-*']}, '.reglas[0]'),
                  ({'equipos': []}, '.equipos'), ({'equipos': ['']}, '.equipos[0]'),
                  ({'campos': []}, '.campos'), ({'campos': {}}, '.campos'),
                  ({'campos': {'': '*'}}, '.campos'), ({'campos': {'tarea': 1}}, '.campos.tarea'),

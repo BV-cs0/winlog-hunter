@@ -1,0 +1,91 @@
+title: "Caída del servicio de registro de eventos"
+id: 0921d089-0333-5f72-acda-a9367977c071
+status: experimental
+description: "Caída del servicio de registro de eventos"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1562.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\WerFault.exe"
+        CommandLine|re: "(?i)(?:^|\\s)-u\\s+-p\\s+\\d+\\b"
+        ParentCommandLine|contains: "-s EventLog"
+    condition: selection
+level: high
+---
+title: "Conexión SMB a la pipe de eventos"
+id: bbb5a055-7de7-518a-b242-c9079c9f97cb
+status: experimental
+description: "Señal auxiliar para la correlación. Puede ser el Visor de eventos remoto."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1562.002
+name: wlh037_pipe
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 18
+        PipeName: "\\eventlog"
+        Image: "System"
+    condition: selection
+level: informational
+---
+title: "WerFault del grupo LocalServiceNetworkRestricted"
+id: 3faceabc-12f9-537b-a0f9-9f92280c55be
+status: experimental
+description: "Señal auxiliar para la correlación."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1562.002
+name: wlh037_werfault
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\WerFault.exe"
+        CommandLine|re: "(?i)(?:^|\\s)-u\\s+-p\\s+\\d+\\b"
+        ParentImage|endswith: "\\svchost.exe"
+        ParentCommandLine|contains: "-k LocalServiceNetworkRestricted"
+    condition: selection
+level: informational
+---
+title: "Caída del registro de eventos tras una conexión remota"
+id: 498a135f-4bfd-5781-90e7-d42b5354e034
+status: experimental
+description: "Conexión anterior en el mismo equipo."
+correlation:
+    type: temporal_ordered
+    rules: ["wlh037_pipe", "wlh037_werfault"]
+    group-by: ["Computer"]
+    timespan: 2m
+level: high
+---
+title: "El registro de eventos termina inesperadamente"
+id: 74558058-f0f0-55d5-9c8f-7ff1d64771e7
+status: experimental
+description: "El registro de eventos termina inesperadamente"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1562.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "System"
+        EventID: [7031, 7034]
+        param1: ["EventLog", "Windows Event Log", "Registro de eventos de Windows"]
+    condition: selection
+level: high
+# winlog-hunter: WLH-037

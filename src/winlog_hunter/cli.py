@@ -96,8 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     local = sub.add_parser(
         "equipo",
         help="analiza los logs de este equipo (Windows) y abre el informe",
-        description="Exporta Security, System, PowerShell y Sysmon de las últimas horas, los analiza y guarda "
-        "el informe en Documentos\\winlog-hunter. Ejecútalo como administrador para incluir Security.",
+        description="Exporta los logs que usan las reglas (Security, System, Application, Sysmon, PowerShell, "
+        "Defender, BITS, WinRM y RDP) de las últimas horas, los analiza y guarda el informe en "
+        "Documentos\\winlog-hunter. Ejecútalo como administrador para incluir Security y Sysmon.",
     )
     local.add_argument("--horas", type=int, default=24, help="horas hacia atrás que se analizan (24)")
     local.add_argument("--salida", type=Path, help="carpeta de los informes (Documentos\\winlog-hunter)")

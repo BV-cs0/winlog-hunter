@@ -1,0 +1,127 @@
+title: "Activación de MSHTA o MMC por DCOM en Sysmon"
+id: b79ca12f-e8b4-5fdb-a84b-40d8e2c6383e
+status: experimental
+description: "Activación de MSHTA o MMC por DCOM en Sysmon"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\mshta.exe", "\\mmc.exe"]
+        CommandLine|re: "(?i)(?:^|\\s)-Embedding(?:\\s|$)"
+        ParentImage|endswith: "\\svchost.exe"
+    filter:
+        ParentCommandLine|re: "(?i)^(?!.*(?:^|\\s)-k\\s+DcomLaunch(?:\\s|$)).+"
+    condition: selection and not filter
+level: high
+---
+title: "Activación de MSHTA o MMC por DCOM en Security"
+id: c56be46b-16cb-55fa-a075-0eeb67a8f506
+status: experimental
+description: "El motor también recupera el padre de eventos 4688 anteriores."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4688
+        NewProcessName|endswith: ["\\mshta.exe", "\\mmc.exe"]
+        CommandLine|re: "(?i)(?:^|\\s)-Embedding(?:\\s|$)"
+        ParentProcessName|endswith: "\\svchost.exe"
+    condition: selection
+level: high
+---
+title: "Proceso de escritorio con conexión entrante"
+id: 1515c8d3-be5f-567c-906c-44d8465aaf84
+status: experimental
+description: "Proceso de escritorio con conexión entrante"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Image|endswith: ["\\explorer.exe", "\\mshta.exe", "\\mmc.exe", "\\excel.exe", "\\winword.exe", "\\outlook.exe", "\\visio.exe"]
+        Initiated: "false"
+        DestinationIp|exists: true
+    filter:
+        DestinationIp|cidr: ["127.0.0.0/8", "0.0.0.0/32", "::1/128", "::/128", "::ffff:127.0.0.0/104"]
+    condition: selection and not filter
+level: high
+---
+title: "Intento remoto de activar un objeto DCOM en param4"
+id: 68dc9589-eb46-530a-9f91-69094ded6836
+status: experimental
+description: "Intento remoto de activar un objeto DCOM en param4"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "System"
+        EventID: 10016
+        Provider_Name|contains: "DistributedCOM"
+        param2: "Remote"
+        param3: "Launch"
+        param4: ["{49B2791A-B1AE-4C90-9B8E-E860BA07F889}", "{9BA05972-F6A8-11CF-A442-00A0C90A8F39}", "{C08AFD90-F2A1-11D1-8455-00A0C91F3880}", "{00024500-0000-0000-C000-000000000046}", "{0006F03A-0000-0000-C000-000000000046}", "{00021A20-0000-0000-C000-000000000046}"]
+    condition: selection
+level: medium
+---
+title: "Intento remoto de activar un objeto DCOM en param5"
+id: f5d88b2b-e3f4-55a5-883b-28ed198189bb
+status: experimental
+description: "Intento remoto de activar un objeto DCOM en param5"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "System"
+        EventID: 10016
+        Provider_Name|contains: "DistributedCOM"
+        param2: "Remote"
+        param3: "Launch"
+        param5: ["{49B2791A-B1AE-4C90-9B8E-E860BA07F889}", "{9BA05972-F6A8-11CF-A442-00A0C90A8F39}", "{C08AFD90-F2A1-11D1-8455-00A0C91F3880}", "{00024500-0000-0000-C000-000000000046}", "{0006F03A-0000-0000-C000-000000000046}", "{00021A20-0000-0000-C000-000000000046}"]
+    condition: selection
+level: medium
+---
+title: "PowerShell saliente por RPC privado"
+id: 20e59961-0614-597f-afaf-b02e0af8a35b
+status: experimental
+description: "Los CIDR aproximan la clasificación de direcciones privadas del motor."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Image|endswith: ["\\powershell.exe", "\\pwsh.exe"]
+        Initiated: "true"
+        DestinationPort: 135
+        DestinationIp|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    condition: selection
+level: medium
+# winlog-hunter: WLH-038

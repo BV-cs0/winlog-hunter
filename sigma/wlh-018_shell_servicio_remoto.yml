@@ -29,7 +29,10 @@ detection:
             - '\mshta.exe'
             - '\wscript.exe'
             - '\cscript.exe'
-    condition: all of selection_*
+    selection_wmi_calc:
+        ParentImage|endswith: '\WmiPrvSE.exe'
+        Image|endswith: '\calc.exe'
+    condition: (selection_parent and selection_child) or selection_wmi_calc
 fields:
     - ParentImage
     - Image

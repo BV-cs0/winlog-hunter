@@ -164,14 +164,15 @@ class Streaming(unittest.TestCase):
 
     def test_consulta_temporal_se_elimina_y_solo_lanza_un_proceso(self):
         rutas=[]
+        consultas = list(parsers.consultas_xpath(planificar().ids))
         def leer(command):
             self.assertIn("/sq:true",command)
             path=Path(command[2]);rutas.append(path)
             self.assertTrue(path.exists())
-            self.assertEqual(len(ET.parse(path).getroot().findall("./Query/Select")),3)
+            self.assertEqual([s.text for s in ET.parse(path).getroot().findall("./Query/Select")], consultas)
             yield xml_event(4720)
         with patch.object(parsers,"_leer_wevtutil",side_effect=leer) as run:
-            self.assertEqual(list(parsers._wevtutil_chunks(Path("a.evtx"),list(parsers.consultas_xpath(planificar().ids)))),[xml_event(4720)])
+            self.assertEqual(list(parsers._wevtutil_chunks(Path("a.evtx"), consultas)),[xml_event(4720)])
         self.assertEqual(run.call_count,1)
         self.assertFalse(rutas[0].exists())
 

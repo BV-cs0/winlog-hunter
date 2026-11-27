@@ -92,4 +92,22 @@ fields:
 falsepositives:
     - Software que se configura para arrancar con Windows
 level: high
+---
+title: "Cambio de DirectoryServiceExtPt de NTDS"
+id: 59e54b05-d0ec-512b-ba3a-d861e3b79984
+status: experimental
+description: "Cambio de DirectoryServiceExtPt de NTDS"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1556
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject: "HKLM\\System\\CurrentControlSet\\Services\\NTDS\\DirectoryServiceExtPt"
+    condition: selection
+level: high
 # winlog-hunter: WLH-019

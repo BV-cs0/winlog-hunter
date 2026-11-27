@@ -174,6 +174,12 @@ def registry_persistence(events: list[Event], cfg: Config) -> Iterator[Hit]:
         if e.event_id not in (12, 13, 14) or not _is_sysmon(e):
             continue
         key, image = e.get("TargetObject", "NewName"), e.get("Image")
+        if e.event_id == 13 and key.lower() == r"hklm\system\currentcontrolset\services\ntds\directoryserviceextpt":
+            valor = e.get("Details")
+            origen = " con una ruta UNC" if valor.strip('"').startswith("\\\\") else ""
+            yield Hit([e], f"Se modificó DirectoryServiceExtPt de NTDS{origen}",
+                      {"clave": key, "valor": _truncate(valor), "proceso": image}, mitre=["T1556"])
+            continue
         if not key or _INSTALLERS.match(image):
             continue
         if re.search(r"\\session manager\\bootexecute$", key, re.I) and e.get("Details").strip().lower() == "autocheck autochk *":

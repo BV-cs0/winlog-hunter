@@ -1,0 +1,139 @@
+title: "Hijo de WinRM en 1"
+id: 7d34ba81-a9bc-58bf-91c4-9b44eec53f40
+status: experimental
+description: "El motor asigna severidad media a herramientas de reconocimiento y rutas de usuario."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        Image|exists: true
+    filter:
+        Image|endswith: ["\\cmd.exe", "\\powershell.exe", "\\pwsh.exe", "\\rundll32.exe", "\\mshta.exe", "\\wscript.exe", "\\cscript.exe"]
+    condition: selection and not filter
+level: low
+---
+title: "Reconocimiento desde WinRM en 1"
+id: 51ad1ce7-a7d5-500e-923e-e2104bfb4218
+status: experimental
+description: "Reconocimiento desde WinRM en 1"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        Image|endswith: ["\\hostname.exe", "\\whoami.exe", "\\ipconfig.exe", "\\systeminfo.exe", "\\net.exe", "\\net1.exe", "\\nltest.exe", "\\quser.exe", "\\tasklist.exe", "\\netstat.exe", "\\arp.exe", "\\route.exe"]
+    condition: selection
+level: medium
+---
+title: "Proceso en ruta de usuario desde WinRM en 1"
+id: 3afacf10-db93-5c67-9070-cd7024069532
+status: experimental
+description: "Proceso en ruta de usuario desde WinRM en 1"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        Image|re: "(?i)^[a-z]:\\\\(?:users|temp|windows\\\\temp|perflogs)\\\\"
+    filter:
+        Image|endswith: ["\\cmd.exe", "\\powershell.exe", "\\pwsh.exe", "\\rundll32.exe", "\\mshta.exe", "\\wscript.exe", "\\cscript.exe"]
+    condition: selection and not filter
+level: medium
+---
+title: "Hijo de WinRM en 4688"
+id: 62b8495b-b07c-5cf8-9c41-fc21f634b8c0
+status: experimental
+description: "El motor asigna severidad media a herramientas de reconocimiento y rutas de usuario."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4688
+        ParentProcessName|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        NewProcessName|exists: true
+    filter:
+        NewProcessName|endswith: ["\\cmd.exe", "\\powershell.exe", "\\pwsh.exe", "\\rundll32.exe", "\\mshta.exe", "\\wscript.exe", "\\cscript.exe"]
+    condition: selection and not filter
+level: low
+---
+title: "Reconocimiento desde WinRM en 4688"
+id: 6a47ea3a-9baa-50c3-9d8b-b92e19c401af
+status: experimental
+description: "Reconocimiento desde WinRM en 4688"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4688
+        ParentProcessName|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        NewProcessName|endswith: ["\\hostname.exe", "\\whoami.exe", "\\ipconfig.exe", "\\systeminfo.exe", "\\net.exe", "\\net1.exe", "\\nltest.exe", "\\quser.exe", "\\tasklist.exe", "\\netstat.exe", "\\arp.exe", "\\route.exe"]
+    condition: selection
+level: medium
+---
+title: "Proceso en ruta de usuario desde WinRM en 4688"
+id: 41ad1539-6187-5f23-9148-4fff691412b0
+status: experimental
+description: "Proceso en ruta de usuario desde WinRM en 4688"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4688
+        ParentProcessName|endswith: ["\\wsmprovhost.exe", "\\winrshost.exe"]
+        NewProcessName|re: "(?i)^[a-z]:\\\\(?:users|temp|windows\\\\temp|perflogs)\\\\"
+    filter:
+        NewProcessName|endswith: ["\\cmd.exe", "\\powershell.exe", "\\pwsh.exe", "\\rundll32.exe", "\\mshta.exe", "\\wscript.exe", "\\cscript.exe"]
+    condition: selection and not filter
+level: medium
+---
+title: "Sesión entrante de WinRM"
+id: b2571a96-83d4-5758-a0ab-a12ffa5bba7c
+status: experimental
+description: "El motor agrupa por equipo y usuario dentro de su ventana de análisis."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.006
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-WinRM/Operational"
+        EventID: [91, 169]
+    condition: selection
+level: low
+# winlog-hunter: WLH-039

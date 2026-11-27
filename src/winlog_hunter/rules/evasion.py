@@ -5,12 +5,42 @@ from __future__ import annotations
 import re
 import ntpath
 import ipaddress
+from datetime import timedelta
 from urllib.parse import urlsplit
 from functools import lru_cache
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
 from .base import _maintenance_process, _program_files_path, _registry_number
+
+
+@rule("WLH-037", "Registro de eventos atacado", "high", ["T1562.002"],
+      "Caída del servicio de registro de eventos, también tras una conexión remota a su canal.",
+      eventos={1, 18, ("System", 7031), ("System", 7034)})
+def registro_eventos_atacado(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    conexiones = {}
+    for e in events:
+        equipo = e.computer.lower()
+        if _is_sysmon(e):
+            if e.event_id == 18 and e.get("PipeName").lower() == r"\eventlog" and e.get("Image").lower() == "system":
+                conexiones[equipo] = e
+            if (e.event_id != 1 or _exe(e.get("Image")) != "werfault.exe"
+                    or not re.search(r"(?:^|\s)-u\s+-p\s+\d+\b", e.get("CommandLine"), re.I)):
+                continue
+            padre = e.get("ParentCommandLine")
+            evidencia = {"proceso": e.get("Image"), "comando_padre": padre}
+            if re.search(r"(?:^|\s)-s\s+EventLog(?:\s|$)", padre, re.I):
+                yield Hit([e], "El servicio de registro de eventos se ha caído", evidencia)
+            elif (_exe(e.get("ParentImage")) == "svchost.exe"
+                  and re.search(r"(?:^|\s)-k\s+LocalServiceNetworkRestricted(?:\s|$)", padre, re.I)):
+                previa = conexiones.get(equipo)
+                if previa and timedelta(0) < e.timestamp - previa.timestamp < timedelta(minutes=2):
+                    yield Hit([previa, e], "Caída del registro de eventos tras una conexión remota a su canal", evidencia)
+        # La deshabilitación (7040) y la parada (7036) ya las trata WLH-034.
+        elif e.event_id in (7031, 7034) and e.channel.lower() == "system" and e.get("param1").lower() in {
+            "eventlog", "windows event log", "registro de eventos de windows",
+        }:
+            yield Hit([e], "El servicio de registro de eventos se ha caído", {"servicio": e.get("param1")})
 
 
 _ORIGINAL_NAMES = {

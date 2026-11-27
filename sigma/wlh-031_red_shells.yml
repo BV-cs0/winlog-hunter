@@ -80,4 +80,29 @@ falsepositives:
     - Administración de sistemas, certificados, NuGet y PowerShellGet; severidad baja
     - Clientes RDP alternativos o herramientas autorizadas de túnel
 level: medium
+---
+title: "Intérprete que acepta conexiones remotas"
+id: 05e1ec3c-b89c-5276-b972-66d76e4a7380
+status: experimental
+description: "Se excluyen los puertos locales de WinRM."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Initiated: "false"
+        Image|endswith: ["\\powershell.exe", "\\pwsh.exe", "\\cmd.exe", "\\nc.exe", "\\ncat.exe"]
+        DestinationIp|exists: true
+        SourcePort|exists: true
+    filter:
+        DestinationIp|cidr: ["127.0.0.0/8", "0.0.0.0/32", "::1/128", "::/128", "::ffff:127.0.0.0/104"]
+    filter_winrm:
+        SourcePort: [5985, 5986]
+    condition: selection and not 1 of filter*
+level: high
 # winlog-hunter: WLH-031

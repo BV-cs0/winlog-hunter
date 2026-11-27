@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import ipaddress
+import ntpath
 import re
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, _LOCAL_IPS, _REMOTE_PIPES, _REMOTE_SHELL_CHILDREN, _REMOTE_SHELL_PARENTS, _bursts, _duration, _exe, _is_system_account, _logon_types, _processes, _truncate, _user, defaultdict, rule)
-from .base import _is_sysmon, _windows_path
+from .base import _is_sysmon, _program_files_path, _registry_number, _user_path, _windows_path
 
 @rule(
     "WLH-004",
@@ -91,14 +92,16 @@ def smb_remote_exec(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "Shell lanzada por un servicio remoto",
     "high",
     ["T1047", "T1021.006"],
-    "WMI o WinRM abren cmd o PowerShell: así ejecutan comandos wmiexec, Invoke-Command o winrs.",
+    "WMI o WinRM abren intérpretes o cargadores. WMI también puede lanzar calc.exe como prueba de ejecución remota.",
     eventos={4688, 1},
     agrupar_por=('vía', 'proceso_padre', 'proceso_hijo', 'línea_de_comandos', 'usuario'),
 )
 def remote_service_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
         parent, child = _exe(p.parent), _exe(p.image)
-        if parent not in _REMOTE_SHELL_PARENTS or child not in _REMOTE_SHELL_CHILDREN:
+        if parent not in _REMOTE_SHELL_PARENTS:
+            continue
+        if child not in _REMOTE_SHELL_CHILDREN and (parent, child) != ("wmiprvse.exe", "calc.exe"):
             continue
         via, mitre = _REMOTE_SHELL_PARENTS[parent]
         yield Hit(
@@ -178,6 +181,19 @@ _NETWORK_TOOLS = {"powershell.exe", "pwsh.exe", "cmd.exe", "mshta.exe", "rundll3
 _ROUTINE_NETWORK_TOOLS = {"powershell.exe", "pwsh.exe", "cmd.exe", "msbuild.exe", "certutil.exe", "bitsadmin.exe", "notepad.exe"}
 _RDP_CLIENTS = {"mstsc.exe", "svchost.exe", "msrdc.exe", "rdcman.exe", "mremoteng.exe", "remotedesktop.exe", "windowsapp.exe"}
 _SSH_CLIENTS = {"ssh.exe", "plink.exe", "putty.exe"}
+_BIND_SHELLS = {"powershell.exe", "pwsh.exe", "cmd.exe", "nc.exe", "ncat.exe"}
+
+
+def _direccion(texto: str):
+    try:
+        ip = ipaddress.ip_address(texto)
+    except ValueError:
+        return None
+    return getattr(ip, "ipv4_mapped", None) or ip
+
+
+def _remota(ip) -> bool:
+    return ip is not None and not (ip.is_loopback or ip.is_unspecified)
 
 
 def _filtro_red(e: Event) -> bool:
@@ -194,8 +210,6 @@ def shell_network(events: list[Event], cfg: Config) -> Iterator[Hit]:
         is_wfp = e.event_id == 5156 and (e.channel.lower() in ("security", "") or "security-auditing" in e.provider.lower())
         if not (is_sysmon or is_wfp):
             continue
-        if is_sysmon and e.get("Initiated").lower() == "false":
-            continue
         if is_wfp and e.get("Direction").lower() in {"inbound", "entrada", "%%14592"}:
             continue
         image = e.get("Image") if is_sysmon else e.get("Application")
@@ -203,14 +217,15 @@ def shell_network(events: list[Event], cfg: Config) -> Iterator[Hit]:
         if not image or name in {"system", "[system process]"}:
             continue
         address, port = e.get("DestinationIp", "DestAddress"), e.get("DestinationPort", "DestPort")
-        try:
-            ip = ipaddress.ip_address(address)
-            if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-                ip = ip.ipv4_mapped
-        except ValueError:
+        ip = _direccion(address)
+        if ip is None:
             continue
         reason, severity = "", "medium"
-        if port == "3389" and not ip.is_unspecified and name not in _RDP_CLIENTS and (is_sysmon or ip.is_loopback):
+        if is_sysmon and e.get("Initiated").lower() == "false":
+            port = e.get("SourcePort")
+            if name in _BIND_SHELLS and _remota(ip) and port not in {"", "5985", "5986"}:
+                reason, severity = "intérprete que acepta conexiones remotas (bind shell)", "high"
+        elif port == "3389" and not ip.is_unspecified and name not in _RDP_CLIENTS and (is_sysmon or ip.is_loopback):
             reason = "acceso RDP desde un proceso que no es un cliente habitual"
             severity = "low" if name in _SSH_CLIENTS else "high"
         elif is_sysmon and name in _NETWORK_TOOLS and ip.is_global and not ip.is_multicast:
@@ -224,6 +239,204 @@ def shell_network(events: list[Event], cfg: Config) -> Iterator[Hit]:
             yield Hit(burst, f"{reason.capitalize()} en {burst[0].computer or UNKNOWN}",
                       {"proceso": burst[0].get("Image", "Application"), "destino": address, "puerto": port,
                        "indicador": reason, "conexiones": len(burst)}, severity=severity,
-                      mitre=["T1572"] if port == "3389" else ["T1059", "T1105"])
+                      mitre=["T1572"] if port == "3389" and not reason.endswith("(bind shell)") else ["T1059", "T1105"])
+
+
+_DCOM_PROCESOS = {"explorer.exe", "mshta.exe", "mmc.exe", "excel.exe", "winword.exe", "outlook.exe", "visio.exe"}
+_DCOM_OBJETOS = {
+    "{49b2791a-b1ae-4c90-9b8e-e860ba07f889}": "MMC20.Application",
+    "{9ba05972-f6a8-11cf-a442-00a0c90a8f39}": "ShellWindows",
+    "{c08afd90-f2a1-11d1-8455-00a0c91f3880}": "ShellBrowserWindow",
+    "{00024500-0000-0000-c000-000000000046}": "Excel.Application",
+    "{0006f03a-0000-0000-c000-000000000046}": "Outlook.Application",
+    "{00021a20-0000-0000-c000-000000000046}": "Visio",
+}
+
+
+@rule("WLH-038", "Ejecución remota por DCOM", "high", ["T1021.003"],
+      "Activación de objetos DCOM y conexiones RPC de procesos de escritorio o PowerShell.",
+      eventos={1, 3, 4688, ("System", 10016)})
+def ejecucion_dcom(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        padre = p.event.get("ParentCommandLine")
+        if (_exe(p.parent) == "svchost.exe" and _exe(p.image) in {"mshta.exe", "mmc.exe"}
+                and re.search(r"(?:^|\s)-Embedding(?:\s|$)", p.command_line, re.I)
+                and (not padre or re.search(r"(?:^|\s)-k\s+DcomLaunch(?:\s|$)", padre, re.I))):
+            yield Hit([p.event], "Proceso activado por DCOM",
+                      {"proceso": p.image, "proceso_padre": p.parent, "línea_de_comandos": _truncate(p.command_line)})
+    for e in events:
+        if e.event_id == 3 and _is_sysmon(e):
+            ip = _direccion(e.get("DestinationIp"))
+            if not _remota(ip):
+                continue
+            nombre = _exe(e.get("Image"))
+            sentido = e.get("Initiated").lower()
+            evidencia = {"proceso": e.get("Image"), "dirección": str(ip)}
+            if sentido == "false" and nombre in _DCOM_PROCESOS:
+                yield Hit([e], "Proceso de escritorio que acepta conexiones remotas (DCOM)", evidencia)
+            elif (sentido == "true" and nombre in {"powershell.exe", "pwsh.exe"}
+                  and e.get("DestinationPort") == "135" and ip.is_private and not ip.is_global
+                  and not ip.is_multicast):
+                yield Hit([e], "PowerShell conecta por RPC a otro equipo (WMI, DCOM o tareas remotas)",
+                          evidencia, severity="medium")
+        elif (e.event_id == 10016 and e.channel.lower() == "system"
+              and "distributedcom" in e.provider.lower()
+              and e.get("param2").lower() == "remote" and e.get("param3").lower() == "launch"):
+            objeto = _DCOM_OBJETOS.get(e.get("param4").lower()) or _DCOM_OBJETOS.get(e.get("param5").lower())
+            if objeto:
+                yield Hit([e], f"Intento remoto de activar {objeto} por DCOM",
+                          {"origen": e.get("param9"), "usuario": "\\".join((e.get("param6"), e.get("param7")))},
+                          severity="medium")
+
+
+_WINRM = "Microsoft-Windows-WinRM/Operational"
+_RECONOCIMIENTO_WINRM = {
+    "hostname.exe", "whoami.exe", "ipconfig.exe", "systeminfo.exe", "net.exe", "net1.exe",
+    "nltest.exe", "quser.exe", "tasklist.exe", "netstat.exe", "arp.exe", "route.exe",
+}
+
+
+@rule("WLH-039", "PowerShell Remoting y WinRM", "medium", ["T1021.006"],
+      "Procesos hijos de WinRM y sesiones WSMan entrantes.",
+      eventos={1, 4688, (_WINRM, 91), (_WINRM, 169)})
+def sesiones_winrm(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        hijo = _exe(p.image)
+        if _exe(p.parent) in {"wsmprovhost.exe", "winrshost.exe"} and hijo and hijo not in _REMOTE_SHELL_CHILDREN:
+            severidad = "medium" if hijo in _RECONOCIMIENTO_WINRM or _user_path(p.image) else "low"
+            yield Hit([p.event], f"{hijo} lanzado desde una sesión WinRM",
+                      {"proceso": p.image, "proceso_padre": p.parent, "usuario": p.user}, severity=severidad)
+    sesiones = defaultdict(list)
+    for e in events:
+        if e.channel.lower() == _WINRM.lower() and e.event_id in {91, 169}:
+            sesiones[e.computer.lower(), e.get("username").lower()].append(e)
+    for evs in sesiones.values():
+        for burst in _bursts(evs, cfg.window, 1):
+            yield Hit(burst, "Sesión WinRM entrante",
+                      {"usuario": burst[0].get("username"), "autenticación": sorted({
+                          e.get("authenticationMechanism") for e in burst if e.get("authenticationMechanism")
+                      })}, severity="low")
+
+
+_RDP_RCM = "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational"
+_RDP_CORE = "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational"
+_CLIENTES_MSTSCAX = (_RDP_CLIENTS - {"svchost.exe"}) | {"msrdcw.exe"}
+_TSCLIENT = "\\\\tsclient\\"
+
+
+@rule("WLH-040", "RDP sospechoso", "high", ["T1021.001", "T1572"],
+      "Sesiones RDP desde loopback, unidades redirigidas y cargas inesperadas de mstscax.dll.",
+      eventos={1, 7, 13, 4624, 4688, (_RDP_RCM, 1149), (_RDP_CORE, 131)})
+def rdp_sospechoso(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        if p.image.lower().startswith(_TSCLIENT):
+            yield Hit([p.event], "Programa ejecutado desde una unidad del equipo cliente de RDP",
+                      {"proceso": p.image, "usuario": p.user}, mitre=["T1021.001"])
+    for e in events:
+        origen, usuario = "", ""
+        if e.event_id == 4624 and e.get("LogonType") == "10":
+            origen, usuario = e.get("IpAddress"), _user(e)
+        elif e.event_id == 1149 and e.channel.lower() == _RDP_RCM.lower():
+            origen = e.get("Param3")
+            usuario = "\\".join(filter(None, (e.get("Param2"), e.get("Param1"))))
+        elif e.event_id == 131 and e.channel.lower() == _RDP_CORE.lower():
+            origen = e.get("ClientIP")
+            extremo = re.fullmatch(r"\[([^\]]+)\]:\d+|([^:]+):\d+", origen)
+            if extremo:
+                origen = extremo.group(1) or extremo.group(2)
+        ip = _direccion(origen) if origen else None
+        if ip is not None and ip.is_loopback:
+            yield Hit([e], "Inicio de sesión RDP que llega por un túnel local",
+                      {"origen": origen, "usuario": usuario})
+        if not _is_sysmon(e):
+            continue
+        if (e.event_id == 13 and "\\explorer\\runmru\\" in e.get("TargetObject").lower()
+                and _TSCLIENT in e.get("Details").lower()):
+            yield Hit([e], "RunMRU registra una ejecución desde el equipo cliente de RDP",
+                      {"clave": e.get("TargetObject"), "valor": _truncate(e.get("Details"))},
+                      severity="medium", mitre=["T1021.001"])
+        if e.event_id == 7 and _exe(e.get("ImageLoaded")) == "mstscax.dll":
+            imagen = e.get("Image")
+            if not imagen or _exe(imagen) in _CLIENTES_MSTSCAX:
+                continue
+            riesgo = (_user_path(imagen) or re.match(r"^[a-z]:\\programdata\\", ntpath.normpath(imagen), re.I)
+                      or e.get("Signed").lower() == "false")
+            if riesgo or _program_files_path(imagen):
+                yield Hit([e], "Carga de mstscax.dll por un cliente RDP inesperado",
+                          {"proceso": imagen, "dll": e.get("ImageLoaded")},
+                          severity="high" if riesgo else "low", mitre=["T1021.001"])
+
+
+_CREDENCIALES_REMOTAS = {
+    "wmic.exe", "powershell.exe", "pwsh.exe", "psexec.exe", "psexec64.exe", "paexec.exe",
+    "sc.exe", "schtasks.exe", "reg.exe", "winrs.exe", "mmc.exe",
+}
+_SHARES = r"hklm\system\currentcontrolset\services\lanmanserver\shares" + "\\"
+_CODIGO_SMB = (".exe", ".dll", ".sys", ".bat", ".cmd", ".ps1", ".vbs", ".hta")
+
+
+@rule("WLH-041", "Otros indicios de ejecución remota", "high", ["T1021.002", "T1053.005", "T1570"],
+      "Tareas de sesiones de red, copias SMB, servicios remotos, recursos compartidos, credenciales y xp_cmdshell.",
+      eventos={1, 11, 13, ("Security", 4624), ("Security", 4648), ("Security", 4698),
+               ("Security", 4702), ("Security", 5142), ("Application", 15281), ("Application", 15457)})
+def otros_indicios_remotos(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    sesiones = {}
+    for p in _processes(events):
+        if (_exe(p.parent) == "services.exe"
+                and re.fullmatch(r"(?:psexesvc|paexec[^\\]*|remcomsvc|csexecsvc)\.exe", _exe(p.image))):
+            yield Hit([p.event], "Servicio de ejecución remota iniciado",
+                      {"proceso": p.image, "proceso_padre": p.parent}, mitre=["T1021.002"])
+    for e in events:
+        equipo = e.computer.lower()
+        if e.event_id == 4624 and e.get("LogonType") == "3":
+            identificador = _registry_number(e.get("TargetLogonId"))
+            if identificador:
+                clave = equipo, identificador
+                if _remota(_direccion(e.get("IpAddress"))):
+                    sesiones[clave] = e
+                else:
+                    sesiones.pop(clave, None)
+        elif e.event_id in {4698, 4702}:
+            previa = sesiones.get((equipo, _registry_number(e.get("SubjectLogonId"))))
+            if previa:
+                tarea, ip = e.get("TaskName"), previa.get("IpAddress")
+                usuario = e.get("SubjectUserName") or _user(previa)
+                accion = "creada" if e.event_id == 4698 else "modificada"
+                yield Hit([previa, e], f"Tarea {tarea} {accion} por {usuario} desde {ip}",
+                          {"tarea": tarea, "usuario": usuario, "origen": ip}, mitre=["T1053.005"])
+        elif e.event_id == 11 and _is_sysmon(e) and e.get("Image").lower() == "system":
+            fichero = ntpath.normpath(e.get("TargetFilename")).lower()
+            if fichero.startswith("c:\\windows\\") and fichero.endswith(_CODIGO_SMB):
+                yield Hit([e], "Ejecutable copiado por SMB a la carpeta de Windows",
+                          {"fichero": e.get("TargetFilename")}, mitre=["T1570"])
+        elif e.event_id == 5142 or (e.event_id == 13 and _is_sysmon(e)):
+            recurso = e.get("ShareName").rstrip("\\").rsplit("\\", 1)[-1] if e.event_id == 5142 else ""
+            clave = e.get("TargetObject")
+            if e.event_id == 13 and clave.lower().startswith(_SHARES):
+                nombre = clave[len(_SHARES):]
+                if "\\" not in nombre and nombre.lower() != "security":
+                    recurso = nombre
+            if recurso:
+                yield Hit([e], f"Recurso compartido {recurso} creado", {"recurso": recurso},
+                          severity="medium", mitre=["T1021.002"])
+        elif e.event_id == 4648 and _exe(e.get("ProcessName")) in _CREDENCIALES_REMOTAS:
+            servidor = e.get("TargetServerName").strip().lstrip("\\").lower().rstrip(".")
+            ip = _direccion(servidor)
+            if (servidor.split(".")[0] not in {"", "-", "localhost", equipo.split(".")[0]}
+                    and (ip is None or _remota(ip))):
+                yield Hit([e], "Credenciales explícitas para otro equipo",
+                          {"destino": e.get("TargetServerName"), "proceso": e.get("ProcessName"),
+                           "usuario": e.get("TargetUserName")}, severity="medium", mitre=["T1021.002"])
+        elif (e.event_id in {15281, 15457} and e.channel.lower() == "application"
+              and e.provider.lower().startswith("mssql")):
+            datos = " ".join(e.data.values())
+            if not re.search(r"\bxp_cmdshell\b", datos, re.I):
+                continue
+            if e.event_id == 15281:
+                yield Hit([e], "Intento de usar xp_cmdshell bloqueado",
+                          {"datos": _truncate(datos)}, severity="medium", mitre=["T1059"])
+            elif (e.get("NewValue", "param3", "Data2") == "1"
+                  or re.search(r"\bxp_cmdshell\b[^\r\n]*\b(?:to|a)\s+1\b", datos, re.I)):
+                yield Hit([e], "Se habilitó xp_cmdshell", {"datos": _truncate(datos)}, mitre=["T1059"])
 
 

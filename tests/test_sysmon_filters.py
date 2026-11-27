@@ -61,6 +61,31 @@ class SysmonFilters(unittest.TestCase):
             includes.append(True)
         return any(includes) and not any(excludes)
 
+    def test_captura_movimiento_lateral_y_registro_de_eventos(self):
+        for imagen, padre in (
+            ('WerFault.exe', 'svchost.exe'), ('mshta.exe', 'svchost.exe'),
+            ('hostname.exe', 'wsmprovhost.exe'), ('psexesvc.exe', 'services.exe'),
+        ):
+            self.assertTrue(self.captured('ProcessCreate', Image='C:\\Windows\\System32\\' + imagen,
+                                          ParentImage='C:\\Windows\\System32\\' + padre))
+        self.assertTrue(self.captured('ProcessCreate', Image=r'\\tsclient\C\programa.exe'))
+        self.assertTrue(self.captured('PipeEvent', PipeName=r'\eventlog', Image='System', EventType='ConnectPipe'))
+        self.assertFalse(self.captured('PipeEvent', PipeName=r'\eventlog', Image='System', EventType='CreatePipe'))
+        self.assertTrue(self.captured('NetworkConnect', Image=r'C:\Windows\explorer.exe', Initiated='false'))
+        self.assertTrue(self.captured('NetworkConnect', Image=r'C:\Tools\pwsh.exe', Initiated='true', DestinationPort='135'))
+        self.assertTrue(self.captured('NetworkConnect', Image=r'C:\Tools\ncat.exe', Initiated='false', SourcePort='4444'))
+        self.assertTrue(self.captured('ImageLoad', Image=r'C:\ProgramData\cliente.exe',
+                                      ImageLoaded=r'C:\Windows\System32\mstscax.dll', Signed='true'))
+        self.assertTrue(self.captured('FileCreate', Image='System', TargetFilename=r'C:\Windows\programa.exe'))
+        self.assertFalse(self.captured('FileCreate', Image='System', TargetFilename=r'C:\Windows\notas.txt'))
+        for clave in (
+            r'HKLM\System\CurrentControlSet\Services\NTDS\DirectoryServiceExtPt',
+            r'HKLM\System\CurrentControlSet\Services\LanmanServer\Shares\Docs',
+            r'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU\a',
+        ):
+            self.assertTrue(self.captured('RegistryEvent', TargetObject=clave, EventType='SetValue',
+                                          Details=r'\\tsclient\C\programa.exe'))
+
     def test_all_event_types_used_are_active(self):
         used = {'ProcessCreate','FileCreateTime','NetworkConnect','ImageLoad','CreateRemoteThread','ProcessAccess','FileCreate','RegistryEvent','PipeEvent','WmiEvent','ProcessTampering'}
         for tag in used:

@@ -101,6 +101,19 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
           <DestinationPort condition="is">3389</DestinationPort>
           <Image condition="excludes any">\mstsc.exe;\svchost.exe;\msrdc.exe;\rdcman.exe;\mremoteng.exe;\remotedesktop.exe;\windowsapp.exe</Image>
         </Rule>
+        <Rule name="DCOM entrante" groupRelation="and">
+          <Initiated condition="is">false</Initiated>
+          <Image condition="contains any">\explorer.exe;\mshta.exe;\mmc.exe;\excel.exe;\winword.exe;\outlook.exe;\visio.exe</Image>
+        </Rule>
+        <Rule name="PowerShell por RPC" groupRelation="and">
+          <Initiated condition="is">true</Initiated>
+          <Image condition="contains any">\powershell.exe;\pwsh.exe</Image>
+          <DestinationPort condition="is">135</DestinationPort>
+        </Rule>
+        <Rule name="Intérprete con conexión entrante" groupRelation="and">
+          <Initiated condition="is">false</Initiated>
+          <Image condition="contains any">\powershell.exe;\pwsh.exe;\cmd.exe;\nc.exe;\ncat.exe</Image>
+        </Rule>
       </NetworkConnect>
     </RuleGroup>
     <RuleGroup name="Carga de DLL filtrada" groupRelation="or">
@@ -143,6 +156,10 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
         <Rule name="Autoload mcx2prov" groupRelation="and">
           <Image condition="contains any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Windows\ehome\</Image>
           <Image condition="end with">\mcx2prov.exe</Image>
+        </Rule>
+        <Rule name="Cliente RDP inesperado" groupRelation="and">
+          <ImageLoaded condition="end with">\mstscax.dll</ImageLoaded>
+          <Image condition="not end with">\mstsc.exe</Image>
         </Rule>
       </ImageLoad>
     </RuleGroup>
@@ -200,6 +217,11 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
         <Rule name="Ejecutables en Program Files" groupRelation="and">
           <TargetFilename condition="begin with">C:\Program Files (x86)\</TargetFilename>
           <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <Rule name="Código copiado a Windows por System" groupRelation="and">
+          <Image condition="is">System</Image>
+          <TargetFilename condition="begin with">C:\Windows\</TargetFilename>
+          <TargetFilename condition="contains any">.exe;.dll;.sys;.bat;.cmd;.ps1;.vbs;.hta</TargetFilename>
         </Rule>
       </FileCreate>
     </RuleGroup>
@@ -271,6 +293,12 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
         </Rule>
         <TargetObject condition="contains">\Windows Defender\DisableRealtimeMonitoring</TargetObject>
         <TargetObject condition="contains">\Windows Defender\DisableBehaviorMonitoring</TargetObject>
+        <TargetObject condition="is">HKLM\System\CurrentControlSet\Services\NTDS\DirectoryServiceExtPt</TargetObject>
+        <TargetObject condition="begin with">HKLM\System\CurrentControlSet\Services\LanmanServer\Shares\</TargetObject>
+        <Rule name="RunMRU desde un cliente RDP" groupRelation="and">
+          <TargetObject condition="contains">\Explorer\RunMRU\</TargetObject>
+          <Details condition="contains">\\tsclient\</Details>
+        </Rule>
       </RegistryEvent>
     </RuleGroup>
     <RuleGroup name="Canales de herramientas remotas" groupRelation="or">
@@ -290,6 +318,11 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
           <PipeName condition="is">\spoolss</PipeName>
           <EventType condition="is">CreatePipe</EventType>
           <Image condition="is not">C:\Windows\System32\spoolsv.exe</Image>
+        </Rule>
+        <Rule name="Conexión remota al registro de eventos" groupRelation="and">
+          <PipeName condition="is">\eventlog</PipeName>
+          <Image condition="is">System</Image>
+          <EventType condition="is">ConnectPipe</EventType>
         </Rule>
       </PipeEvent>
     </RuleGroup>

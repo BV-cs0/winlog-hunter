@@ -37,6 +37,9 @@ LOGS = (
     "Windows PowerShell",
     "Microsoft-Windows-Windows Defender/Operational",
     "Microsoft-Windows-Bits-Client/Operational",
+    "Microsoft-Windows-WinRM/Operational",
+    "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational",
+    "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational",
 )
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -400,9 +403,10 @@ def sysmon_uninstall() -> None:
 
 # Subcategorías por GUID: auditpol acepta GUIDs en cualquier idioma de Windows.
 AUDIT_SUBCATEGORIES = [
-    ("{0CCE9215-69AE-11D9-BED3-505054503030}", "Inicio de sesión", "4624, 4625", "/success:enable /failure:enable"),
+    ("{0CCE9215-69AE-11D9-BED3-505054503030}", "Inicio de sesión", "4624, 4625, 4648", "/success:enable /failure:enable"),
     ("{0CCE922B-69AE-11D9-BED3-505054503030}", "Creación de procesos", "4688", "/success:enable"),
-    ("{0CCE9227-69AE-11D9-BED3-505054503030}", "Otros eventos de acceso a objetos", "4698", "/success:enable"),
+    ("{0CCE9227-69AE-11D9-BED3-505054503030}", "Otros eventos de acceso a objetos", "4698, 4702", "/success:enable"),
+    ("{0CCE9224-69AE-11D9-BED3-505054503030}", "Recursos compartidos", "5142", "/success:enable"),
     ("{0CCE9235-69AE-11D9-BED3-505054503030}", "Administración de cuentas de usuario", "4720", "/success:enable"),
     ("{0CCE9237-69AE-11D9-BED3-505054503030}", "Administración de grupos de seguridad", "4728, 4732", "/success:enable"),
     ("{0CCE922F-69AE-11D9-BED3-505054503030}", "Cambios en la política de auditoría", "4719", "/success:enable"),
@@ -418,6 +422,9 @@ AUDIT_LOG_SIZES = {
     "Security": 128 * 1024 * 1024,
     "Microsoft-Windows-PowerShell/Operational": 64 * 1024 * 1024,
     "Microsoft-Windows-Sysmon/Operational": 128 * 1024 * 1024,
+    "Microsoft-Windows-WinRM/Operational": 16 * 1024 * 1024,
+    "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational": 16 * 1024 * 1024,
+    "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational": 16 * 1024 * 1024,
 }
 AUDIT_BACKUP_DIR = SYSMON_INSTALL_DIR / "auditoria-original"
 

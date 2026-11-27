@@ -399,12 +399,20 @@ def _processes(events: list[Event]) -> Iterator[_Process]:
             events.cache_procesos[key] = list(_processes(list(events)))
         yield from events.cache_procesos[key]
         return
+    procesos_4688 = {}
     for e in events:
         if e.event_id == 1 and ("sysmon" in e.channel.lower() or "sysmon" in e.provider.lower() or "Image" in e.data):
             yield _Process(e, e.get("Image"), e.get("CommandLine"), e.get("ParentImage"), e.get("User"))
         elif e.event_id == 4688:
+            equipo = e.computer.lower()
+            imagen = e.get("NewProcessName")
+            padre = e.get("ParentProcessName") or procesos_4688.get(
+                (equipo, _registry_number(e.get("ProcessId"))), "")
+            pid = _registry_number(e.get("NewProcessId"))
+            if pid is not None:
+                procesos_4688[equipo, pid] = imagen
             yield _Process(
-                e, e.get("NewProcessName"), e.get("CommandLine"), e.get("ParentProcessName"), e.get("SubjectUserName")
+                e, imagen, e.get("CommandLine"), padre, e.get("SubjectUserName")
             )
 
 

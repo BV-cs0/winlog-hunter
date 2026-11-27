@@ -1,0 +1,131 @@
+title: "Inicio de sesión RDP por túnel local"
+id: adbebcd4-a8d2-561f-b4d6-6539aa3897e2
+status: experimental
+description: "Inicio de sesión RDP por túnel local"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1572
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4624
+        LogonType: 10
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104"]
+    condition: selection
+level: high
+---
+title: "Autenticación RDP por túnel local"
+id: e84c0250-09ed-5031-9d3d-b48f994a69f7
+status: experimental
+description: "Autenticación RDP por túnel local"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1572
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational"
+        EventID: 1149
+        Param3|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104"]
+    condition: selection
+level: high
+---
+title: "Conexión RdpCoreTS por túnel local"
+id: ac1623cc-8083-5b1d-9448-c9db2e722faa
+status: experimental
+description: "Conexión RdpCoreTS por túnel local"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1572
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational"
+        EventID: 131
+        ClientIP|re: "^(?:127(?:\\.\\d{1,3}){3}(?::\\d+)?|::1|\\[::1\\]:\\d+)$"
+    condition: selection
+level: high
+---
+title: "Ejecución de un programa desde el cliente RDP en Sysmon"
+id: 4d719f90-c49b-5390-bfc1-082717c20480
+status: experimental
+description: "Ejecución de un programa desde el cliente RDP en Sysmon"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|startswith: "\\\\tsclient\\"
+    condition: selection
+level: high
+---
+title: "Ejecución de un programa desde el cliente RDP en Security"
+id: 9f9efc8f-30d2-5448-a551-36875f803937
+status: experimental
+description: "Ejecución de un programa desde el cliente RDP en Security"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4688
+        NewProcessName|startswith: "\\\\tsclient\\"
+    condition: selection
+level: high
+---
+title: "RunMRU registra ejecución desde el cliente RDP"
+id: 34921bfe-efa9-5e5e-8f77-d858ed0a9a98
+status: experimental
+description: "RunMRU registra ejecución desde el cliente RDP"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|contains: "\\Explorer\\RunMRU\\"
+        Details|contains: "\\\\tsclient\\"
+    condition: selection
+level: medium
+---
+title: "Carga de mstscax.dll por un cliente RDP inesperado"
+id: 139a6189-fbd5-5545-8069-8af90043c0c5
+status: experimental
+description: "El motor eleva la severidad en perfiles, ProgramData, temporales o si Signed es false."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 7
+        ImageLoaded|endswith: "\\mstscax.dll"
+        Image|exists: true
+    filter:
+        Image|endswith: ["\\mstsc.exe", "\\msrdc.exe", "\\rdcman.exe", "\\mremoteng.exe", "\\remotedesktop.exe", "\\windowsapp.exe", "\\msrdcw.exe"]
+    condition: selection and not filter
+level: low
+# winlog-hunter: WLH-040

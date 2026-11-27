@@ -1,0 +1,288 @@
+title: "Sesión de red con IP remota"
+id: e21d852c-8d50-5326-a13d-e15f7312569d
+status: experimental
+description: "Señal auxiliar para correlacionar las tareas."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1053.005
+name: wlh041_logon
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4624
+        LogonType: 3
+        IpAddress|exists: true
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "0.0.0.0/32", "::1/128", "::/128", "::ffff:127.0.0.0/104"]
+    condition: selection and not filter
+level: informational
+---
+title: "Tarea creada o modificada"
+id: 2bd53222-073e-5616-9d96-42cc69844155
+status: experimental
+description: "Señal auxiliar para correlacionar las sesiones de red."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1053.005
+name: wlh041_task
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: [4698, 4702]
+    condition: selection
+level: informational
+---
+title: "Tarea creada o modificada desde una sesión de red"
+id: 5edf53d3-9d1b-5ed7-9273-b2558b7a07a6
+status: experimental
+description: "El backend debe normalizar TargetLogonId y SubjectLogonId. El motor correlaciona todo el intervalo disponible."
+correlation:
+    type: temporal_ordered
+    rules: ["wlh041_logon", "wlh041_task"]
+    aliases:
+        LogonId:
+            wlh041_logon: TargetLogonId
+            wlh041_task: SubjectLogonId
+    group-by: ["Computer", "LogonId"]
+    timespan: 30m
+level: high
+---
+title: "Ejecutable copiado a Windows por System"
+id: 9e166afa-011a-5d13-8d0a-94be2bc989aa
+status: experimental
+description: "Ejecutable copiado a Windows por System"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1570
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 11
+        Image: "System"
+        TargetFilename|startswith: "C:\\Windows\\"
+        TargetFilename|endswith: [".exe", ".dll", ".sys", ".bat", ".cmd", ".ps1", ".vbs", ".hta"]
+    condition: selection
+level: high
+---
+title: "Servicio de ejecución remota en Sysmon"
+id: c7104acd-d029-5911-8588-6ddb188e406b
+status: experimental
+description: "Servicio de ejecución remota en Sysmon"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|re: "(?i)\\\\(?:psexesvc|paexec[^\\\\]*|remcomsvc|csexecsvc)\\.exe$"
+        ParentImage|endswith: "\\services.exe"
+    condition: selection
+level: high
+---
+title: "Recurso compartido registrado por Sysmon"
+id: b96a8337-453c-50bc-b196-e8ba4827419b
+status: experimental
+description: "Recurso compartido registrado por Sysmon"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|re: "(?i)^HKLM\\\\System\\\\CurrentControlSet\\\\Services\\\\LanmanServer\\\\Shares\\\\[^\\\\]+$"
+    filter:
+        TargetObject|endswith: "\\Shares\\Security"
+    condition: selection and not filter
+level: medium
+---
+title: "Nuevo recurso compartido en Security"
+id: 52bd3dff-e1e9-53fa-a010-f6629da2f44e
+status: experimental
+description: "Nuevo recurso compartido en Security"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5142
+    condition: selection
+level: medium
+---
+title: "Credenciales explícitas para un equipo remoto"
+id: f45af9e6-3c63-53ad-bfea-bd203c5208aa
+status: experimental
+description: "El motor compara también con el nombre corto del equipo."
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1021.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4648
+        ProcessName|endswith: ["\\wmic.exe", "\\powershell.exe", "\\pwsh.exe", "\\psexec.exe", "\\psexec64.exe", "\\paexec.exe", "\\sc.exe", "\\schtasks.exe", "\\reg.exe", "\\winrs.exe", "\\mmc.exe"]
+        TargetServerName|exists: true
+    filter:
+        TargetServerName: ["-", "localhost", ".", "127.0.0.1", "::1"]
+    condition: selection and not filter
+level: medium
+---
+title: "xp_cmdshell bloqueado en Data0"
+id: e25bda38-1ea1-5fa9-8588-5957827c5618
+status: experimental
+description: "xp_cmdshell bloqueado en Data0"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15281
+        Provider_Name|startswith: "MSSQL"
+        Data0|contains: "xp_cmdshell"
+    condition: selection
+level: medium
+---
+title: "xp_cmdshell bloqueado en param1"
+id: 08d88852-7778-5576-8113-4829eb8be007
+status: experimental
+description: "xp_cmdshell bloqueado en param1"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15281
+        Provider_Name|startswith: "MSSQL"
+        param1|contains: "xp_cmdshell"
+    condition: selection
+level: medium
+---
+title: "xp_cmdshell bloqueado en Message"
+id: f606275a-9938-563b-8dbc-3b5e1b5b0b4a
+status: experimental
+description: "xp_cmdshell bloqueado en Message"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15281
+        Provider_Name|startswith: "MSSQL"
+        Message|contains: "xp_cmdshell"
+    condition: selection
+level: medium
+---
+title: "xp_cmdshell habilitado en Data0"
+id: 90f42be3-9b82-5c86-a6b4-8feb4b349577
+status: experimental
+description: "xp_cmdshell habilitado en Data0"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15457
+        Provider_Name|startswith: "MSSQL"
+        Data0|contains: "xp_cmdshell"
+        Data2: "1"
+    condition: selection
+level: high
+---
+title: "xp_cmdshell habilitado en param1"
+id: 1de37110-1e6f-55e5-931e-b67a27b7a7c3
+status: experimental
+description: "xp_cmdshell habilitado en param1"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15457
+        Provider_Name|startswith: "MSSQL"
+        param1|contains: "xp_cmdshell"
+        param3: "1"
+    condition: selection
+level: high
+---
+title: "xp_cmdshell habilitado en OptionName"
+id: 4a40ee63-e73d-5e8d-8ade-928a8479d48d
+status: experimental
+description: "xp_cmdshell habilitado en OptionName"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15457
+        Provider_Name|startswith: "MSSQL"
+        OptionName|contains: "xp_cmdshell"
+        NewValue: "1"
+    condition: selection
+level: high
+---
+title: "Mensaje de habilitación de xp_cmdshell"
+id: 21bd221b-0ee7-5cba-86bd-34a95a03f030
+status: experimental
+description: "Mensaje de habilitación de xp_cmdshell"
+author: Bryan Valenzuela
+date: 2026-11-27
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Application"
+        EventID: 15457
+        Provider_Name|startswith: "MSSQL"
+        Message|re: "(?i)xp_cmdshell.*\\b(?:to|a)\\s+1\\b"
+    condition: selection
+level: high
+# winlog-hunter: WLH-041
