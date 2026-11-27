@@ -10,7 +10,7 @@ from functools import lru_cache
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
-from .base import _maintenance_process, _registry_number
+from .base import _maintenance_process, _program_files_path, _registry_number
 
 
 _ORIGINAL_NAMES = {
@@ -256,6 +256,18 @@ def _external_url(value: str) -> bool:
         return False
 
 
+# Redes de descarga de actualizaciones de Microsoft y Google. Edge, WebView2, Copilot y las apps
+# hechas con Chromium (NVIDIA App, por ejemplo) descargan por BITS sus componentes desde aquí.
+_UPDATE_CDNS = ("delivery.mp.microsoft.com", "windowsupdate.com", "update.microsoft.com", "gvt1.com", "dl.google.com")
+
+
+def _update_download(image: str, url: str) -> bool:
+    """Actualización rutinaria: un programa de Program Files que descarga de una CDN oficial de actualizaciones."""
+    host = (urlsplit(url).hostname or "").lower() if url else ""
+    oficial = any(host == cdn or host.endswith("." + cdn) for cdn in _UPDATE_CDNS)
+    return oficial and _program_files_path(image)
+
+
 @rule("WLH-036", "Alertas de Defender y trabajos BITS sospechosos", "high", ["T1562.001", "T1197"],
       "Detecciones de malware y desactivación de Defender; descargas BITS externas fuera del mantenimiento habitual.", eventos={3, 5001, 1006, 5007, 60, 1015, 59, 1116, 1117})
 def defender_bits(events: list[Event], cfg: Config) -> Iterator[Hit]:
@@ -280,7 +292,8 @@ def defender_bits(events: list[Event], cfg: Config) -> Iterator[Hit]:
             if image and job[1]:
                 jobs[job] = image
             image = image or jobs.get(job, "")
-            if _maintenance_process(image) or (_windows_path(image) and _exe(image) == "svchost.exe"):
+            if _maintenance_process(image) or (_windows_path(image) and _exe(image) == "svchost.exe") \
+                    or _update_download(image, url):
                 continue
             target = e.get("LocalName", "localName", "jobTitle", "JobTitle")
             executable = bool(re.search(r"\.(?:exe|dll|ps1|vbs|js|msi)(?:$|\?)", url or target, re.I))

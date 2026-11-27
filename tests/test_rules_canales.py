@@ -132,6 +132,22 @@ class DefenderBits(unittest.TestCase):
         data['url'] = r'C:\PackageCache\vendor.msi'
         self.assertFalse(hits('WLH-036', ev(59, channel='Microsoft-Windows-Bits-Client/Operational', **data)))
 
+    def test_bits_update_cdn_from_program_files_is_routine(self):
+        # Edge WebView2, Copilot y NVIDIA App actualizan sus componentes así en un PC normal.
+        bits = dict(channel='Microsoft-Windows-Bits-Client/Operational', jobId='{JOB}')
+        webview = r'C:\Program Files (x86)\Microsoft\EdgeWebView\Application\158.0.4370.45\msedgewebview2.exe'
+        nvidia = r'C:\Program Files\NVIDIA Corporation\NVIDIA App\CEF\NVIDIA Overlay.exe'
+        self.assertFalse(hits('WLH-036', ev(59, processPath=webview, **bits,
+                                            url='http://msedge.b.tlu.dl.delivery.mp.microsoft.com/filestreamingservice/files/x?P1=1')))
+        self.assertFalse(hits('WLH-036', ev(59, processPath=nvidia, **bits,
+                                            url='http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/abc/def')))
+        # La misma CDN pedida desde una carpeta de usuario, o un dominio que solo se parece, sigue saliendo.
+        self.assertTrue(hits('WLH-036', ev(59, processPath=r'C:\Users\Ana\AppData\Local\Temp\upd.exe', **bits,
+                                           url='http://edgedl.me.gvt1.com/edgedl/x')))
+        self.assertTrue(hits('WLH-036', ev(59, processPath=webview, **bits,
+                                           url='http://delivery.mp.microsoft.com.evil.example/payload')))
+        self.assertTrue(hits('WLH-036', ev(59, processPath=webview, **bits, url='http://fakegvt1.com/payload')))
+
 
 class PowerShellAndApplications(unittest.TestCase):
     def test_powershell_module_classic_and_legitimate_string_building(self):
