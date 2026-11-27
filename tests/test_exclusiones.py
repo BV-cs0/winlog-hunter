@@ -251,4 +251,6 @@ class Exclusiones(unittest.TestCase):
         for codificacion in ('utf-16', 'utf-8-sig', 'cp1252'):
             with self.subTest(codificacion=codificacion):
                 self.path.write_bytes(texto.encode(codificacion))
-                self.assertEqual(ex.cargar(self.path)[0].motivo, 'Tarea legítima del antivirus corporativo')
+                # La codificación local de un Windows en español; en Linux sería UTF-8
+                with patch.object(ex.locale, 'getpreferredencoding', return_value='cp1252'):
+                    self.assertEqual(ex.cargar(self.path)[0].motivo, 'Tarea legítima del antivirus corporativo')
