@@ -119,6 +119,25 @@ class ExecutionRules(unittest.TestCase):
     def test_weak_indicators_are_medium(self):
         finding = run_rules([sysmon(0, PS, "powershell.exe -NoProfile -WindowStyle Hidden -File c:\\x.ps1")])[0]
         self.assertEqual(finding.severity, "medium")
+        temp = r"powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Ana\AppData\Local\Temp\a.ps1"
+        self.assertEqual(run_rules([sysmon(0, PS, temp)])[0].severity, "medium")
+
+    def test_launch_flags_only_are_low(self):
+        # Instaladores y herramientas legítimas: banderas de arranque sin nada sospechoso en el comando.
+        rutinarios = [
+            'powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass '
+            '-Command "Get-AppxPackage -Name \'Microsoft.VisualStudioCode\'"',
+            r'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Aldia\aldia.ps1" actualizar --programado',
+            r'powershell.exe -WindowStyle Hidden -NoProfile -STA -ExecutionPolicy Bypass -File "C:\Program Files\Aldia\aldia.ps1" gui',
+        ]
+        for linea in rutinarios:
+            with self.subTest(linea=linea):
+                self.assertEqual([(f.rule_id, f.severity) for f in run_rules([sysmon(0, PS, linea)])], [("WLH-010", "low")])
+        # En cuanto el comando hace algo sospechoso, ya no es rutinario.
+        iex = 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression $env:X"'
+        self.assertEqual(run_rules([sysmon(0, PS, iex)])[0].severity, "medium")
+        parecido = r'powershell -nop -ep bypass -File "C:\Program Files Evil\x.ps1"'
+        self.assertEqual(run_rules([sysmon(0, PS, parecido)])[0].severity, "medium")
 
     def test_lolbins(self):
         events = [

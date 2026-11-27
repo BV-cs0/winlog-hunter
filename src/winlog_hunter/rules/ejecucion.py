@@ -32,6 +32,26 @@ _MORE_LOLBINS = [
 _MORE_LOLBINS = [(name, re.compile(pattern, re.I), [mitre], label)
                  for name, pattern, mitre, label in _MORE_LOLBINS]
 
+# Banderas de arranque: dicen cómo se lanza PowerShell, no qué hace. Instaladores y herramientas
+# legítimas (VS Code, Al Día, gestores de versiones) las usan a diario.
+_BANDERAS_DE_ARRANQUE = {"ventana oculta", "sin perfil", "bypass de política"}
+_SCRIPT = re.compile(r'(?:^|\s)[-/]f(?:ile)?\s+(?:"([^"]+)"|(\S+))', re.I)
+
+
+def _solo_banderas_rutinarias(command_line: str, indicators: list[str]) -> bool:
+    """Solo banderas de arranque, con un comando escrito en la línea o un script instalado.
+
+    Un script en una carpeta que puede escribir el usuario (Temp, Descargas...) sigue siendo media.
+    """
+    if not set(indicators) <= _BANDERAS_DE_ARRANQUE:
+        return False
+    script = _SCRIPT.search(command_line)
+    if not script:
+        return True
+    ruta = script.group(1) or script.group(2)
+    return _program_files_path(ruta) or _windows_path(ruta, ("system32", "syswow64"))
+
+
 _LOLBINS_POR_NOMBRE = {}
 for _nombre, _patron, _mitre, _tecnica in _LOLBINS + _MORE_LOLBINS:
     _LOLBINS_POR_NOMBRE.setdefault(_nombre, []).append((_patron, _mitre, _tecnica))
@@ -41,7 +61,8 @@ for _nombre, _patron, _mitre, _tecnica in _LOLBINS + _MORE_LOLBINS:
     "PowerShell sospechoso",
     "high",
     ["T1059.001"],
-    "PowerShell con comando codificado, descarga + IEX o evasión de AMSI (alta); varias banderas de ocultación (media).",
+    "PowerShell con comando codificado, descarga + IEX o evasión de AMSI (alta); varias banderas de ocultación (media; "
+    "baja si solo son banderas de arranque con un comando en la línea o un script de Program Files).",
     eventos={4688, 1},
     agrupar_por=('proceso_padre', 'línea_de_comandos', 'comando_decodificado', 'usuario', 'indicadores'),
 )
@@ -59,6 +80,7 @@ def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
         )
         if not strong and len(indicators) < 2:
             continue
+        severity = "high" if strong else "low" if _solo_banderas_rutinarias(p.command_line, indicators) else "medium"
         yield Hit(
             [p.event],
             f"PowerShell sospechoso en {p.event.computer or UNKNOWN}: {', '.join(indicators)}",
@@ -69,7 +91,7 @@ def suspicious_powershell(events: list[Event], cfg: Config) -> Iterator[Hit]:
                 "comando_decodificado": _truncate(decoded),
                 "indicadores": indicators,
             },
-            severity="high" if strong else "medium",
+            severity=severity,
         )
 
 
