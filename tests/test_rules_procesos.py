@@ -61,7 +61,7 @@ class UacRules(unittest.TestCase):
         self.assertFalse(hits("WLH-022", [ev(11, channel=CHANNEL, Image=SYSTEM + "cmd.exe", TargetFilename=SYSTEM + r"sysprep\setup.log")]))
 
     def test_cmstp(self):
-        self.assertEqual(hits("WLH-022", [sysmon(0, SYSTEM + "cmstp.exe", "cmstp /s C:\\Temp\\profile.inf")])[0].severity, "medium")
+        self.assertEqual(hits("WLH-022", [sysmon(0, SYSTEM + "cmstp.exe", "cmstp /s C:\\Temp\\profile.inf")])[0].severity, "high")
         self.assertFalse(hits("WLH-022", [sysmon(0, SYSTEM + "cmstp.exe", "cmstp /s")]))
         self.assertFalse(hits("WLH-022", [sysmon(0, SYSTEM + "cmstp.exe", "cmstp profile.inf")]))
 

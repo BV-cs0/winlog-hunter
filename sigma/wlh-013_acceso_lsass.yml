@@ -62,4 +62,25 @@ fields:
 falsepositives:
     - Antivirus y EDR de terceros no incluidos en el filtro
 level: critical
+---
+title: "Auditoría de lectura de memoria de LSASS"
+id: d111952f-9725-521d-9ed1-028b92d02295
+status: experimental
+description: "Auditoría de lectura de memoria de LSASS"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: [4656, 4663]
+        ObjectName|endswith: "\\lsass.exe"
+        AccessMask|re: "(?i)^0x[0-9a-f]*[13579bdf][0-9a-f]$"
+    filter:
+        ProcessName|endswith: ["\\csrss.exe", "\\lsm.exe", "\\msmpeng.exe", "\\mssense.exe", "\\procexp.exe", "\\procexp64.exe", "\\searchindexer.exe", "\\services.exe", "\\svchost.exe", "\\taskmgr.exe", "\\vmtoolsd.exe", "\\wininit.exe", "\\wmiprvse.exe"]
+    condition: selection and not filter
+level: critical
 # winlog-hunter: WLH-013

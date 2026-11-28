@@ -88,4 +88,63 @@ fields:
 falsepositives:
     - Copias renombradas para administración o diagnóstico
 level: medium
+---
+title: "Ejecutable Microsoft renombrado en ruta de usuario"
+id: b280bc4c-690d-558e-9dac-c6b7e510c2e6
+status: experimental
+description: "Candidato. Comparar el nombre base de Image con OriginalFileName y elevar a high para LOLBins conocidos."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1036.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+        OriginalFileName|endswith: ".exe"
+        Company|contains: "Microsoft"
+    condition: selection
+level: medium
+---
+title: "Proceso con extensión ajena a un ejecutable"
+id: c073bc38-8ffd-521a-af6d-a6faa04e2796
+status: experimental
+description: "Proceso con extensión ajena a un ejecutable"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1036.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: [".tmp", ".dat", ".jpg", ".png", ".txt", ".log"]
+    filter:
+        Image|startswith: "C:\\Windows\\Installer\\"
+    condition: selection and not filter
+level: high
+---
+title: "Proceso padre de usuario con extensión ajena a un ejecutable"
+id: 42e8219b-c061-426a-ad37-a8c0af150c61
+status: experimental
+description: "El evento de creación del hijo registra la imagen del proceso padre."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1036.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+        ParentImage|endswith: [".tmp", ".dat", ".jpg", ".png", ".txt", ".log"]
+    condition: selection
+level: high
 # winlog-hunter: WLH-023

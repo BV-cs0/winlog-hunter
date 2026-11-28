@@ -72,4 +72,24 @@ detection:
 falsepositives:
     - Depuración, administración autorizada y cambios planificados de seguridad
 level: medium
+---
+title: "Transacción NTFS de proceso fuera de Windows"
+id: 2f985cdd-6081-56d9-8bf2-78051e120c47
+status: experimental
+description: "Transacción NTFS de proceso fuera de Windows"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1055.013
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4985
+        ProcessName|exists: true
+    filter:
+        ProcessName|startswith: ["C:\\Windows\\", "C:\\Program Files\\", "C:\\Program Files (x86)\\"]
+    condition: selection and not filter
+level: medium
 # winlog-hunter: WLH-034

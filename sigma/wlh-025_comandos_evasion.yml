@@ -71,4 +71,22 @@ falsepositives:
     - Administración autorizada de copias y registros
     - Exclusiones de Defender, portproxy y atributos de ficheros legítimos; severidad media en el motor
 level: high
+---
+title: "Ejecutable o script ocultado con attrib"
+id: 8d7d917a-77e9-5f46-ab00-4e4bf6289cde
+status: experimental
+description: "Ejecutable o script ocultado con attrib"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1564.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        CommandLine|re: "(?i)(?:^|[\\s\\\\])attrib(?:\\.exe)?\"?\\s.*\\+h\\s.*\\.(?:exe|dll|ps1|bat|vbs|js|hta)(?:[\"\\s]|$)"
+    condition: selection
+level: medium
 # winlog-hunter: WLH-025

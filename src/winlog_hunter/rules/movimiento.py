@@ -5,6 +5,9 @@ from __future__ import annotations
 import ipaddress
 import ntpath
 import re
+from datetime import timedelta
+
+from .base import _ipc, _pipe_smb
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, _LOCAL_IPS, _REMOTE_PIPES, _REMOTE_SHELL_CHILDREN, _REMOTE_SHELL_PARENTS, _bursts, _duration, _exe, _is_system_account, _logon_types, _processes, _truncate, _user, defaultdict, rule)
 from .base import _is_sysmon, _program_files_path, _registry_number, _user_path, _windows_path
@@ -121,6 +124,9 @@ def remote_service_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
 def _pipe_label(pipe: str, image: str, created: bool) -> tuple[str, str]:
     """Clasifica nombres conocidos, retirando solo el prefijo de transporte inicial."""
     name = re.sub(r"^(?:\\\\\.\\pipe\\|\\device\\namedpipe\\|\\pipe\\|\\)", "", pipe.lower())
+    renombrada = re.fullmatch(r"([^\\]+)-[^\\]+-\d+-(?:stdin|stdout|stderr)", name)
+    if renombrada and not name.startswith("psexesvc-"):
+        return "PsExec con el servicio renombrado", "high"
     if re.match(r"^(?:psexesvc|paexec|csexec|remcom)(?:$|[_\-\\]|\d|svc)", name):
         return "canal de una herramienta de administración remota", "low"
     if re.fullmatch(r"(?:msagent|postex)_[a-z0-9_\-]+|status_[0-9a-f]{2,16}|msse-[0-9a-z]+-server", name):
@@ -326,13 +332,15 @@ _TSCLIENT = "\\\\tsclient\\"
 
 @rule("WLH-040", "RDP sospechoso", "high", ["T1021.001", "T1572"],
       "Sesiones RDP desde loopback, unidades redirigidas y cargas inesperadas de mstscax.dll.",
-      eventos={1, 7, 13, 4624, 4688, (_RDP_RCM, 1149), (_RDP_CORE, 131)})
+      eventos={1, 7, 13, 4624, 4688, (_RDP_RCM, 1149), (_RDP_CORE, 131), (_RDP_CORE, 148)})
 def rdp_sospechoso(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for p in _processes(events):
         if p.image.lower().startswith(_TSCLIENT):
             yield Hit([p.event], "Programa ejecutado desde una unidad del equipo cliente de RDP",
                       {"proceso": p.image, "usuario": p.user}, mitre=["T1021.001"])
     for e in events:
+        if e.event_id == 148 and e.get("ChannelName").lower() == "ms_t120":
+            yield Hit([e], "Canal virtual RDP MS_T120", {"canal_virtual": e.get("ChannelName")})
         origen, usuario = "", ""
         if e.event_id == 4624 and e.get("LogonType") == "10":
             origen, usuario = e.get("IpAddress"), _user(e)
@@ -440,3 +448,50 @@ def otros_indicios_remotos(events: list[Event], cfg: Config) -> Iterator[Hit]:
                 yield Hit([e], "Se habilitó xp_cmdshell", {"datos": _truncate(datos)}, mitre=["T1059"])
 
 
+
+
+@rule("WLH-044", "Coerción de autenticación y barridos por SMB", "medium", ["T1187", "T1018", "T1135"],
+      "Detecta acceso a pipes de coerción y patrones de red SMB.",
+      eventos={3, 18, ("Security", 5145)})
+def coercion_smb(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    conexiones, salientes, pipes = defaultdict(list), defaultdict(list), defaultdict(list)
+    for e in events:
+        if e.event_id == 5145:
+            ip = _direccion(e.get("IpAddress"))
+            pipe = _pipe_smb(e)
+            if ip and _remota(ip) and _ipc(e) and pipe in {"spoolss", "efsrpc"}:
+                yield Hit([e], "Acceso remoto a una pipe de coerción", {"origen": str(ip), "pipe": pipe})
+            continue
+        if not _is_sysmon(e) or e.get("Image").lower() != "system":
+            continue
+        equipo = e.computer.lower()
+        if e.event_id == 18 and e.get("PipeName"):
+            pipes[equipo].append(e)
+        elif e.event_id == 3:
+            sentido = e.get("Initiated").lower()
+            if sentido not in {"true", "false"}:
+                continue
+            saliente = sentido == "true"
+            if e.get("DestinationPort") == "445":
+                ip = _direccion(e.get("DestinationIp" if saliente else "SourceIp"))
+            elif not saliente and e.get("SourcePort") == "445":
+                # Sysmon puede poner el extremo local primero en conexiones entrantes.
+                ip = _direccion(e.get("DestinationIp"))
+            else:
+                continue
+            if not ip or not _remota(ip):
+                continue
+            conexiones[equipo, str(ip)].append(e)
+            if saliente:
+                salientes[equipo].append(e)
+    for (_, ip), evs in conexiones.items():
+        for burst in _bursts(evs, timedelta(seconds=59, microseconds=999999), 2,
+                             distinct=lambda e: e.get("Initiated").lower()):
+            yield Hit(burst, "Autenticación SMB en los dos sentidos", {"extremo": ip})
+    for grupos, campo, motivo in (
+        (pipes, "PipeName", "Enumeración remota de named pipes"),
+        (salientes, "DestinationIp", "Barrido SMB"),
+    ):
+        for evs in grupos.values():
+            for burst in _bursts(evs, cfg.window, 5, distinct=lambda e: e.get(campo).lower()):
+                yield Hit(burst, motivo, {"destinos": sorted({e.get(campo) for e in burst})})

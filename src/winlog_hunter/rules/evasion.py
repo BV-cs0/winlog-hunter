@@ -6,17 +6,18 @@ import re
 import ntpath
 import ipaddress
 from datetime import timedelta
+from collections import defaultdict
 from urllib.parse import urlsplit
 from functools import lru_cache
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, rule)
 from .base import _exe, _is_sysmon, _processes, _truncate, _windows_path, decode_powershell
-from .base import _maintenance_process, _program_files_path, _registry_number
+from .base import _ip_remota, _ipc, _maintenance_process, _pipe_smb, _program_files_path, _registry_number, _ruta_usuario
 
 
 @rule("WLH-037", "Registro de eventos atacado", "high", ["T1562.002"],
       "Caída del servicio de registro de eventos, también tras una conexión remota a su canal.",
-      eventos={1, 18, ("System", 7031), ("System", 7034)})
+      eventos={1, 18, ("System", 7031), ("System", 7034), ("Security", 5145)})
 def registro_eventos_atacado(events: list[Event], cfg: Config) -> Iterator[Hit]:
     conexiones = {}
     for e in events:
@@ -36,6 +37,9 @@ def registro_eventos_atacado(events: list[Event], cfg: Config) -> Iterator[Hit]:
                 previa = conexiones.get(equipo)
                 if previa and timedelta(0) < e.timestamp - previa.timestamp < timedelta(minutes=2):
                     yield Hit([previa, e], "Caída del registro de eventos tras una conexión remota a su canal", evidencia)
+        elif e.event_id == 5145 and _ipc(e) and _pipe_smb(e) == "eventlog" and _ip_remota(e.get("IpAddress")):
+            yield Hit([e], "Acceso remoto a la pipe del registro de eventos",
+                      {"origen": e.get("IpAddress"), "pipe": "eventlog"}, severity="medium")
         # La deshabilitación (7040) y la parada (7036) ya las trata WLH-034.
         elif e.event_id in (7031, 7034) and e.channel.lower() == "system" and e.get("param1").lower() in {
             "eventlog", "windows event log", "registro de eventos de windows",
@@ -55,6 +59,9 @@ _ORIGINAL_NAMES = {
     "procdump.exe": {"procdump.exe", "procdump64.exe", "procdump64a.exe"},
 }
 _SYSTEM_NAMES = {"svchost.exe", "lsass.exe", "services.exe", "csrss.exe", "winlogon.exe", "smss.exe", "wermgr.exe"}
+_EXTENSIONES_DATOS = (".tmp", ".dat", ".jpg", ".png", ".txt", ".log")
+# Los instaladores Inno Setup se ejecutan siempre como %TEMP%\is-XXXXX.tmp\<nombre>.tmp.
+_INNO_SETUP = re.compile(r"\\is-[0-9a-z]{5}\.tmp\\[^\\]+\.tmp$", re.I)
 _ACCESSIBILITY = {"sethc.exe", "osk.exe", "utilman.exe", "magnify.exe", "narrator.exe"}
 
 
@@ -82,6 +89,18 @@ def masquerading(events: list[Event], cfg: Config) -> Iterator[Hit]:
         path = _ruta_disfraz(p.image)
         misplaced = name in _SYSTEM_NAMES and not _windows_path(path)
         misplaced |= name == "explorer.exe" and not bool(re.fullmatch(r"[a-z]:\\windows\\explorer\.exe", path)) and not _windows_path(path, ("syswow64", "winsxs"))
+        if (original.endswith(".exe") and original != name and _ruta_usuario(path)
+                and "microsoft" in p.event.get("Company").lower()
+                and name not in _ORIGINAL_NAMES.get(original, ())):
+            reason = "ejecutable de Microsoft renombrado en una ruta de usuario"
+            severity = "high" if original in _ORIGINAL_NAMES else "medium"
+        if (name.endswith(_EXTENSIONES_DATOS) and not path.startswith("c:\\windows\\installer\\")
+                and not _INNO_SETUP.search(path)):
+            reason, severity = "proceso con extensión ajena a un ejecutable", "high"
+        elif (_ruta_usuario(p.parent) and _exe(p.parent).endswith(_EXTENSIONES_DATOS)
+              and not _INNO_SETUP.search(p.parent)):
+            # El evento de creación del hijo también acredita la ejecución del padre.
+            reason, severity = "proceso padre de usuario con extensión ajena a un ejecutable", "high"
         if misplaced:
             reason, severity, mitre = "nombre de proceso de sistema fuera de su ruta", "high", ["T1036.005"]
         if reason:
@@ -145,6 +164,9 @@ def defense_commands(events: list[Event], cfg: Config) -> Iterator[Hit]:
                 reason, severity = "adición de una exclusión de Defender", "medium"
         elif name == "attrib.exe" and re.search(r"(?:^|\s)\+h(?:\s|$)", text) and re.search(r"(?:^|\s)\+s(?:\s|$)", text):
             reason, technique, severity = "fichero marcado como oculto y de sistema", "T1564.001", "medium"
+        elif (name == "attrib.exe" and re.search(r"(?:^|\s)\+h(?:\s|$)", text)
+              and re.search(r'\.(?:exe|dll|ps1|bat|vbs|js|hta)(?:"|\s|$)', text)):
+            reason, technique, severity = "fichero ejecutable o script marcado como oculto", "T1564.001", "medium"
         elif name in {"net.exe", "net1.exe"} and re.search(r'\bstop\s+"?eventlog\b', text):
             reason = "parada del servicio EventLog"
         elif name == "sc.exe" and re.search(r'\bconfig\s+"?eventlog"?\s+.*\bstart=\s*disabled\b', text):
@@ -337,3 +359,59 @@ def defender_bits(events: list[Event], cfg: Config) -> Iterator[Hit]:
                        "valor_nuevo": _truncate(e.get("New Value", "NewValue"))}, severity=severity, mitre=mitre)
 
 
+
+
+_DRIVERS_VULNERABLES = set("""
+    rwdrv.sys gdrv.sys rtcore64.sys dbutil_2_3.sys capcom.sys iqvw64e.sys asio.sys asio2.sys
+    asio3.sys kprocesshacker.sys mhyprot2.sys zamguard64.sys aswarpot.sys gmer64.sys
+    naldrv.sys procexp.sys
+""".split())
+_SERVICIO_IMAGEPATH = re.compile(r"^hklm\\system\\(?:currentcontrolset|controlset\d+)\\services\\[^\\]+\\imagepath$")
+
+
+def _ruta_driver(ruta: str) -> str:
+    ruta = ruta.strip().strip('"').lower()
+    ruta = ruta.removeprefix("\\??\\").removeprefix("\\\\?\\")
+    if ruta.startswith(("\\systemroot\\", "%systemroot%\\")):
+        ruta = r"c:\windows" + ruta[ruta.index("\\", 1):]
+    elif ruta.startswith("system32\\"):
+        ruta = "c:\\windows\\" + ruta
+    return ntpath.normpath(ruta)
+
+
+@rule("WLH-045", "Drivers vulnerables o sospechosos", "high", ["T1068", "T1014", "T1562.001"],
+      "Detecta cargas de drivers de riesgo y ficheros de driver escritos desde rutas de usuario.",
+      eventos={6, 11, 13})
+def drivers_sospechosos(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    escrituras, servicios = defaultdict(list), defaultdict(list)
+    for e in events:
+        if not _is_sysmon(e):
+            continue
+        equipo = e.computer.lower()
+        if e.event_id == 6:
+            ruta = e.get("ImageLoaded")
+            nombre = _exe(ruta)
+            if not nombre:
+                continue
+            vulnerable = (nombre in _DRIVERS_VULNERABLES or nombre == "vboxdrv.sys"
+                          and not _ruta_driver(ruta).startswith("c:\\program files\\oracle\\"))
+            if vulnerable or e.get("Signed").lower() == "false" or _ruta_usuario(_ruta_driver(ruta)):
+                yield Hit([e], "Carga de driver vulnerable o sospechoso", {"driver": ruta})
+            elif nombre in {"winring0x64.sys", "winring0.sys"}:
+                yield Hit([e], "Carga de driver WinRing0", {"driver": ruta}, severity="medium")
+        elif e.event_id == 11:
+            ruta = _ruta_driver(e.get("TargetFilename"))
+            if ruta.endswith(".sys") and _ruta_usuario(e.get("Image")):
+                escrituras[equipo, ruta].append(e)
+        elif e.event_id == 13 and _SERVICIO_IMAGEPATH.fullmatch(e.get("TargetObject").lower()):
+            ruta = _ruta_driver(e.get("Details"))
+            if ruta.endswith(".sys"):
+                servicios[equipo, ruta].append(e)
+    for clave, evs in escrituras.items():
+        for e in evs:
+            cambios = [s for s in servicios.get(clave, ()) if abs(s.timestamp - e.timestamp) <= cfg.window]
+            evidencia = {"driver": e.get("TargetFilename"), "proceso": e.get("Image")}
+            if cambios:
+                evidencia["clave"] = cambios[0].get("TargetObject")
+            yield Hit(sorted([e, *cambios], key=lambda x: x.timestamp),
+                      "Driver escrito por un proceso en ruta de usuario", evidencia)

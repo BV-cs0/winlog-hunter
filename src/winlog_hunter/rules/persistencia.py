@@ -8,8 +8,8 @@ from datetime import timedelta
 from ..parsers import parse_timestamp
 
 from .base import (Config, Event, Hit, Iterator, UNKNOWN, _INSTALLERS, _PERSISTENCE_KEYS, _REMOTE_EXEC_SERVICE, _SUSPICIOUS_COMMAND, _TASK_ARGS, _TASK_COMMAND, _bursts, _exe, _is_sysmon, _privileged_group, _truncate, defaultdict, html, rule)
-from .base import (_SHELLS, _browser_root, _maintenance_process, _processes, _program_files_path,
-                   _user_path, _windows_path)
+from .base import (_SHELLS, _TOKEN_COMANDO, _browser_root, _maintenance_process, _processes,
+                   _program_files_path, _ruta_usuario, _user_path, _windows_path)
 from .base import _REPLICATION_GUIDS
 
 
@@ -366,3 +366,42 @@ def dangerous_ad_changes(events: list[Event], cfg: Config) -> Iterator[Hit]:
                       severity=severity, mitre=mitre)
 
 
+
+
+_SHIM = "Microsoft-Windows-Application-Experience/Program-Telemetry"
+_WINSOCK = "Microsoft-Windows-Winsock-WS2HELP/Operational"
+_ACCESIBILIDAD = set("osk sethc utilman magnify narrator displayswitch atbroker".split())
+_SHIMS_ABUSADOS = {"injectdll", "correctfilepaths", "redirectexe", "redirectshortcut", "shimviaeat",
+                   "loadlibraryredirect", "virtualregistry", "terminateexe"}
+
+
+@rule("WLH-046", "Persistencia en accesibilidad, shims y Winsock", "high",
+      ["T1546.008", "T1546.011", "T1547"],
+      "Detecta ejecución desde accesibilidad, shims aplicados a Windows y cambios de Winsock.",
+      eventos={1, 4688, (_SHIM, 500), (_WINSOCK, 1)})
+def persistencia_accesibilidad(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for p in _processes(events):
+        hijo = _exe(p.image)
+        if (_exe(p.parent).removesuffix(".exe") in _ACCESIBILIDAD
+                and hijo in _SHELLS | {"whoami.exe", "net.exe", "net1.exe"}):
+            yield Hit([p.event], "Programa de accesibilidad lanzó una shell o utilidad de administración",
+                      {"proceso_padre": p.parent, "proceso": p.image}, mitre=["T1546.008"])
+        elif hijo == "sdbinst.exe":
+            for a, b in _TOKEN_COMANDO.findall(p.command_line):
+                ruta = a or b
+                if ruta.lower().endswith(".sdb") and _ruta_usuario(ruta):
+                    yield Hit([p.event], "Base de compatibilidad instalada desde ruta de usuario",
+                              {"fichero": ruta}, mitre=["T1546.011"])
+                    break
+    for e in events:
+        if e.channel.lower() == _SHIM.lower() and _windows_path(e.get("ExePath"), ("system32", "syswow64")):
+            # Windows aplica a diario shims propios; solo los que inyectan o redirigen son señal fuerte.
+            abusado = e.get("FixName").lower() in _SHIMS_ABUSADOS
+            yield Hit([e], "Shim aplicado a un ejecutable de Windows",
+                      {"proceso": e.get("ExePath"), "shim": e.get("FixName")},
+                      severity="medium" if abusado else "low", mitre=["T1546.011"])
+        elif e.channel.lower() == _WINSOCK.lower():
+            instalador = e.get("Installer")
+            yield Hit([e], "Cambio en el catálogo de Winsock",
+                      {"instalador": instalador, "proveedor": e.get("LSPName"), "catálogo": e.get("Catalog")},
+                      severity="low" if _program_files_path(instalador) else "medium", mitre=["T1547"])

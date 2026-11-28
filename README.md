@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/badge/PyPI-v0.8.0-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
-Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Application**, **Sysmon**, **PowerShell**, **Defender**, **BITS**, **WinRM** y **RDP**, detecta actividad sospechosa con 41 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
+Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Application**, **Sysmon**, **PowerShell**, **Defender**, **BITS**, **WinRM** **RDP**, **Application Experience** y **Winsock**, detecta actividad sospechosa con 46 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
 ![Informe de winlog-hunter con logs de ataques reales](docs/informe.png)
 
@@ -49,7 +49,7 @@ winlog-hunter <comando> -h      # todas las opciones de un comando, p. ej. winlo
 |---|---|---|
 | `winlog-hunter equipo` | Analiza los logs de este equipo y abre el informe | Recomendado |
 | `winlog-hunter analyze <ficheros>` | Analiza `.evtx`, `.xml` o `.json` exportados de cualquier equipo | No |
-| `winlog-hunter rules` | Lista las 41 reglas de detección | No |
+| `winlog-hunter rules` | Lista las 46 reglas de detección | No |
 | `winlog-hunter auditoria --activar` | Activa los eventos de Windows que usan las reglas | Sí |
 | `winlog-hunter sysmon --instalar` | Instala Sysmon con la configuración de winlog-hunter | Sí |
 | `winlog-hunter programar` | Programa el análisis diario del equipo | Sí |
@@ -61,7 +61,7 @@ winlog-hunter <comando> -h      # todas las opciones de un comando, p. ej. winlo
 | ID | Detección | Eventos | MITRE ATT&CK |
 |---|---|---|---|
 | WLH-001 | Fuerza bruta (misma cuenta y origen), también SQL Server | 4625, MSSQL 18456 | T1110.001 |
-| WLH-002 | Password spraying (un origen, muchas cuentas), también Kerberos | 4625, 4768, 4771 | T1110.003 |
+| WLH-002 | Password spraying (un origen, muchas cuentas), también Kerberos | 4625, 4768, 4771; Application 18456 | T1110.003 |
 | WLH-003 | Inicio de sesión correcto justo después de una fuerza bruta | 4625 → 4624 | T1110, T1078 |
 | WLH-004 | Movimiento lateral (misma cuenta en varios equipos) | 4624 tipo 3/10 | T1021 |
 | WLH-005 | Registro de eventos borrado | 1102, 104 | T1685.005 |
@@ -72,7 +72,7 @@ winlog-hunter <comando> -h      # todas las opciones de un comando, p. ej. winlo
 | WLH-010 | PowerShell sospechoso; decodifica `-EncodedCommand` | Sysmon 1, 4688 | T1059.001 |
 | WLH-011 | LOLBins: argumentos de ejecución indirecta y scripts con extensión disfrazada; MSI remoto | Sysmon 1, 4688, MsiInstaller 1040/1042 | T1218, T1105, T1197, T1047, T1202, T1220, T1027 |
 | WLH-012 | Office (Word, Excel, Outlook...) lanzando una shell | Sysmon 1, 4688 | T1566.001, T1204.002 |
-| WLH-013 | Acceso a la memoria de LSASS (Mimikatz, procdump...) | Sysmon 10 | T1003.001 |
+| WLH-013 | Acceso a la memoria de LSASS (Mimikatz, procdump...) | Sysmon 10; Security 4656, 4663 | T1003.001 |
 | WLH-014 | Volcado de credenciales; monitor de salida de LSASS y copia de ntds.dit | Sysmon 1, 4688, ProcessExitMonitor 3001, ESENT 325-327 | T1003.001-.003 |
 | WLH-015 | DCSync: replicación de AD pedida por un usuario | 4662 | T1003.006 |
 | WLH-016 | Kerberoasting: tickets de servicio RC4 | 4769 | T1558.003 |
@@ -86,21 +86,26 @@ winlog-hunter <comando> -h      # todas las opciones de un comando, p. ej. winlo
 | WLH-024 | Shell de servidor o servicio; SQL Server habilitando o ejecutando xp_cmdshell | Sysmon 1, 4688, MSSQL 15457/33205 | T1505.003, T1505.001, T1190, T1021.003, T1059 |
 | WLH-025 | Comandos de evasión, eliminación de copias y desactivación de defensas | Sysmon 1, 4688 | T1490, T1562.001/.004, T1564.001, T1070.001, T1090 |
 | WLH-026 | Posible inyección: hilos remotos, permisos, pila sin módulo y manipulación de imagen | Sysmon 8/10/25 | T1055 |
-| WLH-027 | DLL sin firma desde una ruta no habitual, con cargador de sistema o pareja conocida | Sysmon 7 | T1574.001, T1574.002 |
+| WLH-027 | DLL sin firma, cargas fantasma y sideloading de Office | Sysmon 7 | T1574.001, T1574.002 |
 | WLH-028 | Named pipes de herramientas remotas y suplantación; PsExec autorizado queda bajo | Sysmon 1/17/18, 7045 | T1021.002, T1559, T1134 |
 | WLH-029 | Desactivación de defensas en el registro, seguridad VBA y cambios de RDP | Sysmon 12/13 | T1562.001, T1112 |
 | WLH-030 | Inicio, volcados de LSASS, memssp, rutas de servicio, spooler y fechas retrasadas | Sysmon 2/11 | T1547.001, T1003.001, T1574.001/.009, T1070.006 |
 | WLH-031 | Red de intérpretes y LOLBins, bind shells y conexiones RDP de procesos inesperados | Sysmon 3, Security 5156 | T1059, T1105, T1572 |
-| WLH-032 | AS-REP sin preautenticación, credenciales alternativas y correlación anónima del DC | 4768, 4624, 4742 | T1558.004, T1550.002, T1210 |
+| WLH-032 | AS-REP sin preautenticación, credenciales alternativas y correlación anónima del DC | 4768, 4624, 4742; System 5805, 5827–5831 | T1558.004, T1550.002, T1210 |
 | WLH-033 | Cambios sensibles de AD, SID History, DSRM y reseteo de cuentas privilegiadas | 5136, 4742, 4765/4766, 4794, 4724 | T1098, T1207, T1134.005, T1222.001 |
-| WLH-034 | Privilegios sensibles, arranque inseguro, retirada de auditoría y parada de EventLog | 4703, 4673, 4826, 4719, 7036/7040; 4985 con Sysmon 25 | T1134, T1553.006, T1562, T1055.013 |
+| WLH-034 | Privilegios sensibles, arranque inseguro, retirada de auditoría y parada de EventLog | 4703, 4673, 4826, 4719, 7036/7040; 4985 y Sysmon 25 | T1134, T1553.006, T1562, T1055.013 |
 | WLH-035 | Consultas de grupos y ráfagas de enumeración RPC o comandos de dominio | 4798/4799, 4661, 5145, Sysmon 1, 4688 | T1087, T1069, T1135, T1018 |
 | WLH-036 | Malware o protección desactivada en Defender y descargas BITS atípicas | Defender 1116/1117/1006/1015/5001/5007; BITS 3/59/60 | T1562.001, T1197 |
-| WLH-037 | Caída del servicio de registro de eventos, también provocada desde otro equipo | Sysmon 1, 18; System 7031, 7034 | T1562.002 |
+| WLH-037 | Caída del servicio de registro de eventos, también provocada desde otro equipo | Sysmon 1, 18; System 7031, 7034; Security 5145 | T1562.002 |
 | WLH-038 | Ejecución remota por DCOM y conexiones RPC | Sysmon 1, 3; Security 4688; System 10016 | T1021.003 |
 | WLH-039 | PowerShell Remoting y sesiones WinRM | Sysmon 1; Security 4688; WinRM 91, 169 | T1021.006 |
-| WLH-040 | Túneles RDP, unidades redirigidas y cargas de mstscax.dll | Sysmon 1, 7, 13; Security 4624, 4688; RDP 1149, 131 | T1021.001, T1572 |
+| WLH-040 | Túneles RDP, unidades redirigidas y cargas de mstscax.dll | Sysmon 1, 7, 13; Security 4624, 4688; RDP 1149, 131, 148 | T1021.001, T1572 |
 | WLH-041 | Tareas remotas, SMB, recursos compartidos, credenciales y xp_cmdshell | Sysmon 1, 11, 13; Security 4624, 4648, 4698, 4702, 5142; Application 15281, 15457 | T1021.002, T1053.005, T1570 |
+| WLH-042 | Escalada local de privilegios | Sysmon 1, 3, 7, 11, 13; Security 4624, 4648, 4688, 5145 | T1068, T1134.001 |
+| WLH-043 | Robo de credenciales almacenadas | Sysmon 12, 13; Security 4624, 4625, 4656, 4663, 4724, 5145 | T1555.003, T1003.002, T1056.001 |
+| WLH-044 | Coerción de autenticación y barridos por SMB | Sysmon 3, 18; Security 5145 | T1187, T1018, T1135 |
+| WLH-045 | Drivers vulnerables o sospechosos | Sysmon 6, 11, 13 | T1068, T1014, T1562.001 |
+| WLH-046 | Persistencia en accesibilidad, shims y Winsock | Sysmon 1; Security 4688; Program-Telemetry 500; Winsock 1 | T1546.008, T1546.011, T1547 |
 
 Para reducir falsos positivos, la severidad depende del contexto: un servicio o una tarea normales salen como *baja*, y uno que ejecuta `powershell -enc` sale como *alta*. Los ataques en ráfaga (500 intentos de contraseña) se agrupan en un único hallazgo.
 
@@ -413,7 +418,7 @@ sus repeticiones; los avisos y códigos de salida se calculan sobre los hallazgo
 ```text
 src/winlog_hunter/
   parsers.py         lectura de EVTX / XML / JSON y normalización de eventos
-  rules/             las 41 reglas de detección mapeadas a MITRE ATT&CK
+  rules/             las 46 reglas de detección mapeadas a MITRE ATT&CK
   exclusiones.py     validación y aplicación de exclusiones justificadas
   report.py          informe en consola, HTML, Markdown, CSV y JSON
   local.py           análisis del propio equipo, aviso, tarea programada, auditoría, Sysmon y desinstalación

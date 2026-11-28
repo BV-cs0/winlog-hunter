@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .base import _ip_remota, _ipc, _pipe_smb, _program_files_path, _registry_number, _ruta_usuario
+
 from .base import (AccountKey, Any, Config, Event, Hit, Iterator, UNKNOWN, _DUMP_COMMANDS, _DUMP_TOOLS, _LSASS_ALLOWED, _PROCESS_VM_READ, _REPLICATION_GUIDS, _account_key, _bursts, _duration, _exe, _failed_logons, _failure_reasons, _is_sysmon, _is_system_account, _logon_label, _logon_types, _processes, _source, _truncate, _user, bisect_left, bisect_right, defaultdict, rule)
 
 @rule(
@@ -48,7 +50,7 @@ def brute_force(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "high",
     ["T1110.003"],
     "Un mismo origen falla contra muchas cuentas: 4625 o Kerberos 4768/4771 con errores de credenciales.",
-    eventos={4768, 4625, 4771},
+    eventos={4768, 4625, 4771, ("Application", 18456)},
 )
 def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
     groups: dict[str, list[Event]] = defaultdict(list)
@@ -69,6 +71,19 @@ def password_spray(events: list[Event], cfg: Config) -> Iterator[Hit]:
                     "motivos": _failure_reasons(burst),
                 },
             )
+    sql = defaultdict(list)
+    for e in events:
+        if e.event_id != 18456 or not e.provider.lower().startswith("mssql"):
+            continue
+        cuenta = e.get("UserName", "Data0")
+        cliente = re.search(r"\[CLIENT:\s*([^\]]+)\]", e.get("Data2", "Message"), re.I)
+        if cuenta and cliente:
+            sql[e.computer.lower(), cliente[1].strip()].append(e)
+    for (_, origen), evs in sql.items():
+        for burst in _bursts(evs, cfg.window, cfg.spray_min_accounts,
+                             distinct=lambda e: e.get("UserName", "Data0").lower()):
+            yield Hit(burst, "Fallos de SQL Server contra varias cuentas",
+                      {"origen": origen, "cuentas": sorted({e.get("UserName", "Data0") for e in burst})})
     kerberos: dict[tuple[str, str], list[Event]] = defaultdict(list)
     for e in events:
         if not _security(e) or not _user(e) or _is_system_account(_user(e)) or _source(e) == UNKNOWN:
@@ -128,10 +143,18 @@ def success_after_failures(events: list[Event], cfg: Config) -> Iterator[Hit]:
     "critical",
     ["T1003.001"],
     "Sysmon 10: un proceso abre lsass.exe con permiso de lectura de memoria. Así roban contraseñas Mimikatz, procdump o comsvcs.",
-    eventos={10},
+    eventos={10, ("Security", 4656), ("Security", 4663)},
 )
 def lsass_access(events: list[Event], cfg: Config) -> Iterator[Hit]:
     for e in events:
+        if e.event_id in (4656, 4663):
+            origen = e.get("ProcessName")
+            mascara = _registry_number(e.get("AccessMask")) or 0
+            if (e.get("ObjectName").lower().endswith(r"\lsass.exe") and origen
+                    and _exe(origen) not in _LSASS_ALLOWED and mascara & _PROCESS_VM_READ):
+                yield Hit([e], "Lectura de memoria de LSASS auditada por Security",
+                          {"proceso": origen, "acceso": e.get("AccessMask")}, severity="critical")
+            continue
         if e.event_id != 10 or not _is_sysmon(e) or _exe(e.get("TargetImage")) != "lsass.exe":
             continue
         source, mask, trace = e.get("SourceImage"), e.get("GrantedAccess").lower(), e.get("CallTrace")
@@ -212,8 +235,13 @@ def _anonymous(e: Event, prefix: str) -> bool:
 
 
 @rule("WLH-032", "Indicios de ataques a Kerberos y NTLM", "medium", ["T1558.004", "T1550.002", "T1210"],
-      "AS-REP sin preautenticación, logon NTLM atípico y correlación de acceso anónimo con cambio de la cuenta del DC.", eventos={4768, 4624, 4742})
+      "AS-REP sin preautenticación, logon NTLM atípico y correlación de acceso anónimo con cambio de la cuenta del DC.", eventos={4768, 4624, 4742, *(("System", i) for i in (5805, 5827, 5828, 5829, 5830, 5831))})
 def kerberos_ntlm(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    for e in events:
+        if e.channel.lower() == "system" and e.provider.lower() == "netlogon":
+            yield Hit([e], "Aviso de autenticación de NETLOGON",
+                      {"evento": e.event_id, "cuenta": e.get("Data0")},
+                      severity="medium" if e.event_id == 5805 else "high", mitre=["T1210"])
     groups: dict[tuple[str, str, str, str, str], list[Event]] = defaultdict(list)
     anonymous: dict[tuple[str, str], list[Event]] = defaultdict(list)
     for e in events:
@@ -322,3 +350,80 @@ def kerberoasting(events: list[Event], cfg: Config) -> Iterator[Hit]:
             )
 
 
+
+
+_NAVEGADORES = set("chrome msedge brave opera vivaldi firefox iexplore".split())
+_DATOS_NAVEGADOR = re.compile(
+    r"\\(?:chrome|edge|bravesoftware|opera software|opera|vivaldi)\\.*"
+    r"\\(?:login data|web data|cookies|local state)$"
+    r"|\\firefox\\.*\\(?:logins\.json|key4\.db|signons\.sqlite)$")
+_SAM = "hklm\\sam\\sam\\domains\\"
+_DIRECTINPUT = re.compile(r"^hku\\[^\\]+\\software\\microsoft\\directinput\\mostrecentapplication\\name$")
+
+
+@rule("WLH-043", "Robo de credenciales almacenadas", "high", ["T1555.003", "T1003.002", "T1056.001"],
+      "Detecta accesos a secretos de navegadores, SAM, DPAPI y cambios de cuentas.",
+      eventos={12, 13, *(("Security", i) for i in (4624, 4625, 4656, 4663, 4724, 5145))})
+def credenciales_almacenadas(events: list[Event], cfg: Config) -> Iterator[Hit]:
+    accesos = defaultdict(list)
+    colmenas = defaultdict(list)
+    for e in events:
+        motivo, nivel = "", "high"
+        proceso = e.get("ProcessName", "Image")
+        objeto = e.get("ObjectName", "TargetObject").lower()
+        origen = e.get("IpAddress")
+        if e.event_id in (4656, 4663) and proceso:
+            if (_DATOS_NAVEGADOR.search(objeto) and _exe(proceso).removesuffix(".exe") not in _NAVEGADORES
+                    and not _program_files_path(proceso)):
+                motivo = "acceso a credenciales de un navegador"
+        elif e.event_id == 5145 and _ip_remota(origen):
+            pipe = _pipe_smb(e)
+            if _ipc(e) and pipe == "protected_storage":
+                motivo = "acceso remoto a claves maestras DPAPI"
+            elif (_ipc(e) and pipe == "winreg"
+                  or e.get("ShareName").lower().split("\\")[-1] in {"c$", "admin$"}
+                  and (_registry_number(e.get("AccessMask")) or 0) & 2):
+                equipo = e.computer.lower()
+                accesos[equipo, origen].append(e)
+                sujeto = e.get("SubjectUserSid")
+                if sujeto and (_ipc(e) or re.fullmatch(
+                        r"p?(?:sam|system|security)", _exe(e.get("RelativeTargetName")))):
+                    colmenas[equipo, sujeto].append(e)
+        elif e.event_id == 4724 and e.get("TargetUserName").endswith("$"):
+            sujeto = e.get("SubjectUserName")
+            if sujeto and not sujeto.endswith("$"):
+                motivo = "contraseña de cuenta de equipo restablecida por un usuario"
+        elif e.event_id in (4624, 4625) and e.get("LogonType") == "2":
+            if e.get("LogonProcessName").strip().lower() == "chrome":
+                motivo, nivel = "se pidió la contraseña de Windows para ver contraseñas guardadas", "low"
+        elif _is_sysmon(e):
+            tipo = e.get("EventType").lower()
+            if objeto.startswith(_SAM):
+                clave = objeto[len(_SAM):]
+                if e.event_id == 12 and tipo == "createkey" and re.fullmatch(r"account\\users\\names\\[^\\]+", clave):
+                    motivo, nivel = "cuenta local creada", "medium"
+                elif e.event_id == 13 and tipo in {"setvalue", ""}:
+                    if clave == r"builtin\aliases\00000220\c":
+                        motivo = "cambio en el grupo Administradores"
+                    elif clave.startswith("account\\users\\000001f4\\"):
+                        motivo, nivel = "cambio directo en la cuenta Administrador", "medium"
+            elif e.event_id == 13 and objeto.startswith("hklm\\security\\policy\\secrets\\$machine.acc\\"):
+                motivo, nivel = "cambio del secreto de la cuenta de equipo", "low"
+            elif e.event_id == 13 and _DIRECTINPUT.fullmatch(objeto) and _ruta_usuario(proceso):
+                motivo, nivel = "aplicación de usuario registrada en DirectInput", "low"
+        if motivo:
+            yield Hit([e], motivo, {"proceso": proceso, "objeto": objeto, "origen": origen,
+                                   "cuenta": e.get("TargetUserName")}, severity=nivel)
+    for (_, origen), evs in accesos.items():
+        for burst in _bursts(evs, cfg.window, 2, distinct=lambda e: str(_ipc(e))):
+            yield Hit(burst, "Copia remota de SAM/SYSTEM/SECURITY", {"origen": origen})
+    for evs in colmenas.values():
+        def destino(e):
+            return "winreg" if _ipc(e) else _exe(e.get("RelativeTargetName")).removeprefix("p")
+
+        for burst in _bursts(evs, cfg.window, 4, distinct=destino):
+            origenes = {e.get("IpAddress") for e in burst if _ipc(e)}
+            escrituras = {e.get("IpAddress") for e in burst if not _ipc(e)}
+            if origenes.isdisjoint(escrituras):
+                yield Hit(burst, "Copia remota de SAM/SYSTEM/SECURITY",
+                          {"orígenes": sorted(origenes | escrituras)})

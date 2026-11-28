@@ -158,7 +158,11 @@ class Streaming(unittest.TestCase):
         self.assertTrue(document.startswith(codecs.BOM_UTF8))
         root=ET.fromstring(document)
         selects=root.findall("./Query/Select")
-        self.assertEqual(len(selects),4)
+        ids = planificar().ids
+        presupuesto = parsers.XPATH_COMPARACIONES - 2
+        self.assertEqual(len(selects), (len(ids) + presupuesto - 1) // presupuesto)
+        for select in selects:
+            self.assertLessEqual(select.text.count("EventID="), presupuesto)
         self.assertEqual([s.text for s in selects],queries)
         self.assertTrue(all(s.get("Path")=="file://"+str(path.resolve()) for s in selects))
 

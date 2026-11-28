@@ -86,8 +86,47 @@ class SysmonFilters(unittest.TestCase):
             self.assertTrue(self.captured('RegistryEvent', TargetObject=clave, EventType='SetValue',
                                           Details=r'\\tsclient\C\programa.exe'))
 
+    def test_captura_telemetria_de_escalada(self):
+        usuario = "C:\\Users\\operador\\"
+        windows = "C:\\Windows\\System32\\"
+        self.assertTrue(self.captured('DriverLoad', ImageLoaded=windows+'driver.sys', Signed='true'))
+        self.assertTrue(self.captured('FileCreate', Image=usuario+'app.exe', TargetFilename=windows+'driver.sys'))
+        self.assertFalse(self.captured('FileCreate', Image=windows+'services.exe', TargetFilename=windows+'driver.sys'))
+        self.assertTrue(self.captured('FileCreate', TargetFilename=usuario+'wscript.exe.manifest'))
+        self.assertTrue(self.captured('FileCreate', TargetFilename=usuario+'gdiplus.dll'))
+        self.assertFalse(self.captured('FileCreate', TargetFilename=r'C:\Program Files\Proveedor\gdiplus.dll'))
+        self.assertTrue(self.captured('FileCreate', Image=windows+'spoolsv.exe', TargetFilename=usuario+'fuera.exe'))
+        self.assertTrue(self.captured('ImageLoad', ImageLoaded=windows+'wow64log.dll', Signed='true'))
+        for dll in ('ualapi', 'windowscoredeviceinfo', 'phoneinfo', 'wlbsctrl', 'tsmsisrv',
+                    'tsvipsrv', 'wptsextensions', 'cdpsgshims', 'wwlib'):
+            self.assertTrue(self.captured('ImageLoad', ImageLoaded=windows+dll+'.dll', Signed='false'), dll)
+        self.assertTrue(self.captured('ImageLoad', Image=windows+'spoolsv.exe',
+                                      ImageLoaded=windows+r'spool\drivers\x64\test.dll', Signed='false'))
+        for clave in (
+            r'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\cmmgr32.exe\ProfileInstallPath',
+            r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Ports\C:\Temp\test.dll',
+            r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Print\Printers\Test\SpoolDirectory',
+            r'HKLM\System\CurrentControlSet\Control\Print\Printers\Test\CopyFiles\Test\Module',
+            r'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Orchestrator\UScheduler\1\cmdLine',
+            r'HKLM\SOFTWARE\Test\SymbolicLinkValue',
+            r'HKLM\SAM\SAM\Domains\Account\Users\Names\Ana',
+            r'HKLM\SECURITY\Policy\Secrets\$MACHINE.ACC\CurrVal',
+            r'HKU\SID\Software\Microsoft\DirectInput\MostRecentApplication\Name',
+            r'HKLM\System\CurrentControlSet\Services\Test\ImagePath',
+        ):
+            self.assertTrue(self.captured('RegistryEvent', TargetObject=clave, EventType='SetValue',
+                                          Details=windows+'driver.sys'), clave)
+        for campo in ('SourcePort', 'DestinationPort'):
+            self.assertTrue(self.captured('NetworkConnect', Image='System', **{campo: '445'}))
+            self.assertTrue(self.captured('NetworkConnect', Image=usuario+'app.exe',
+                                          SourceIp='::1', DestinationIp='::1', **{campo: '5985'}))
+        self.assertFalse(self.captured('NetworkConnect', Image='System', DestinationPort='443'))
+        self.assertTrue(self.captured('PipeEvent', PipeName=r'\servicio-PC-100-stdout'))
+        self.assertTrue(self.captured('PipeEvent', Image='System', EventType='ConnectPipe', PipeName=r'\otra'))
+        self.assertFalse(self.captured('PipeEvent', Image='System', EventType='CreatePipe', PipeName=r'\otra'))
+
     def test_all_event_types_used_are_active(self):
-        used = {'ProcessCreate','FileCreateTime','NetworkConnect','ImageLoad','CreateRemoteThread','ProcessAccess','FileCreate','RegistryEvent','PipeEvent','WmiEvent','ProcessTampering'}
+        used = {'DriverLoad','ProcessCreate','FileCreateTime','NetworkConnect','ImageLoad','CreateRemoteThread','ProcessAccess','FileCreate','RegistryEvent','PipeEvent','WmiEvent','ProcessTampering'}
         for tag in used:
             entries = list(self.root.iter(tag))
             self.assertTrue(entries, tag)

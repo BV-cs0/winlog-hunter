@@ -1,0 +1,143 @@
+title: "Carga de driver de riesgo conocido"
+id: 53fd5d3b-3ae0-52cc-a9b7-6b098a2137fa
+status: experimental
+description: "Carga de driver de riesgo conocido"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 6
+        ImageLoaded|endswith: ["\\asio.sys", "\\asio2.sys", "\\asio3.sys", "\\aswarpot.sys", "\\capcom.sys", "\\dbutil_2_3.sys", "\\gdrv.sys", "\\gmer64.sys", "\\iqvw64e.sys", "\\kprocesshacker.sys", "\\mhyprot2.sys", "\\naldrv.sys", "\\procexp.sys", "\\rtcore64.sys", "\\rwdrv.sys", "\\zamguard64.sys"]
+    condition: selection
+level: high
+---
+title: "Carga de VBoxDrv fuera de Oracle"
+id: 669ac58f-f730-52d2-8d0f-a26f07bda456
+status: experimental
+description: "Carga de VBoxDrv fuera de Oracle"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 6
+        ImageLoaded|endswith: "\\vboxdrv.sys"
+    filter:
+        ImageLoaded|startswith: "C:\\Program Files\\Oracle\\"
+    condition: selection and not filter
+level: high
+---
+title: "Carga de WinRing0"
+id: 33c0ca94-a070-5fe0-86d3-88aa75b46881
+status: experimental
+description: "Carga de WinRing0"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 6
+        ImageLoaded|endswith: ["\\winring0.sys", "\\winring0x64.sys"]
+    condition: selection
+level: medium
+---
+title: "Carga de driver sin firma"
+id: 7a587d7f-b7ea-59b8-8158-c9c137097d07
+status: experimental
+description: "Carga de driver sin firma"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 6
+        Signed: "false"
+    condition: selection
+level: high
+---
+title: "Carga de driver desde ruta de usuario"
+id: fb8534e3-d701-576c-aac6-6ec7d4ebd3a9
+status: experimental
+description: "Carga de driver desde ruta de usuario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 6
+        ImageLoaded|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "Driver escrito por un proceso de usuario"
+name: wlh045_escritura
+id: 7bbf713b-7ba1-59bf-a125-90d5aa32d7a2
+status: experimental
+description: "Driver escrito por un proceso de usuario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 11
+        TargetFilename|endswith: ".sys"
+        Image|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "Servicio apunta a un driver escrito recientemente"
+name: wlh045_servicio
+id: b8554a72-ba32-5b63-9295-17c9d1a5ba83
+status: experimental
+description: "Correlacionar por equipo y ruta normalizada del driver con FileCreate en cinco minutos."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|re: "(?i)\\\\services\\\\[^\\\\]+\\\\imagepath$"
+        Details|re: "(?i)\\.sys\"?$"
+    condition: selection
+level: informational
+---
+title: "Servicio apunta a un driver creado por un proceso de usuario"
+id: be72647c-bc31-5439-86ce-36349d89ea9b
+status: experimental
+description: "El backend debe normalizar las rutas del evento 11 y del registro en RutaDriver."
+correlation:
+    type: temporal
+    rules: [wlh045_escritura, wlh045_servicio]
+    group-by: [Computer, RutaDriver]
+    timespan: 5m
+level: high
+# winlog-hunter: WLH-045

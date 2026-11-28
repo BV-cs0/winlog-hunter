@@ -56,4 +56,22 @@ falsepositives:
     - PsExec y herramientas similares de soporte remoto autorizado; severidad baja
     - Pruebas de IPC con echo; severidad media si no se instala como servicio
 level: high
+---
+title: "Pipe de PsExec con nombre de servicio alternativo"
+id: f5a64e0d-b49e-571e-bd70-407b80b55b2d
+status: experimental
+description: "Pipe de PsExec con nombre de servicio alternativo"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1021.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: [17, 18]
+        PipeName|re: "(?i)^\\\\(?!psexesvc-)[^\\\\]+-[^\\\\]+-\\d+-(?:stdin|stdout|stderr)$"
+    condition: selection
+level: high
 # winlog-hunter: WLH-028

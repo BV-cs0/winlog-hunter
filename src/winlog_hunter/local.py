@@ -40,6 +40,8 @@ LOGS = (
     "Microsoft-Windows-WinRM/Operational",
     "Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational",
     "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational",
+    "Microsoft-Windows-Winsock-WS2HELP/Operational",
+    "Microsoft-Windows-Application-Experience/Program-Telemetry",
 )
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -419,6 +421,8 @@ AUDIT_REGISTRY = [
 ]
 # Tamaño mínimo de los registros, para que quepan al menos 24 h de eventos.
 AUDIT_LOG_SIZES = {
+    "Microsoft-Windows-Winsock-WS2HELP/Operational": 16 * 1024 * 1024,
+    "Microsoft-Windows-Application-Experience/Program-Telemetry": 16 * 1024 * 1024,
     "Security": 128 * 1024 * 1024,
     "Microsoft-Windows-PowerShell/Operational": 64 * 1024 * 1024,
     "Microsoft-Windows-Sysmon/Operational": 128 * 1024 * 1024,

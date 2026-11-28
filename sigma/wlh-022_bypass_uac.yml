@@ -81,4 +81,286 @@ falsepositives:
     - Registro legítimo de App Paths por usuario; severidad media en el motor
     - Instalaciones silenciosas de perfiles cmstp; severidad media en el motor
 level: high
+---
+title: "COM elevado lanza un proceso"
+id: 217286ef-57b7-5042-8006-65a4094bab3d
+status: experimental
+description: "COM elevado lanza un proceso"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: "\\dllhost.exe"
+        ParentCommandLine|contains: ["/Processid:{3E5FC7F9-9A51-4367-9063-A120244FBEC7}", "/Processid:{D2E7041B-2927-42FB-8E9F-7CE93B6DC937}"]
+    condition: selection
+level: medium
+---
+title: "Instalación silenciosa de un perfil INI o INF"
+id: 0c90d3fd-53a5-55a8-89c5-29a943cb5bd5
+status: experimental
+description: "Instalación silenciosa de un perfil INI o INF"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\cmstp.exe"
+        CommandLine|re: "(?i)\\s/(?:s|au)\\s+.*\\.(?:inf|ini)\\b"
+    condition: selection
+level: medium
+---
+title: "COM cambia ProfileInstallPath"
+id: 30c12856-7375-5717-8fd5-e227f63c4829
+status: experimental
+description: "COM cambia ProfileInstallPath"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        Image|endswith: "\\dllhost.exe"
+        TargetObject|endswith: "\\App Paths\\cmmgr32.exe\\ProfileInstallPath"
+    condition: selection
+level: medium
+---
+title: "XML de usuario aplicado con pkgmgr"
+id: 44f07513-41f8-5549-b10b-da99530cd5ad
+status: experimental
+description: "XML de usuario aplicado con pkgmgr"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\pkgmgr.exe"
+        CommandLine|contains|all: ["/n:", ".xml"]
+        CommandLine|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "XML de usuario aplicado con dism"
+id: fe357780-9d2a-5960-81f7-9f6e5fe82aa6
+status: experimental
+description: "XML de usuario aplicado con dism"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\dism.exe"
+        CommandLine|contains|all: ["/apply-unattend:", ".xml"]
+        CommandLine|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "Shell hija de proceso de mantenimiento o errores"
+id: 05ce834d-7e43-5800-a752-d7619e5139a9
+status: experimental
+description: "Shell hija de proceso de mantenimiento o errores"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\bitsadmin.exe", "\\certutil.exe", "\\cmd.exe", "\\cscript.exe", "\\mshta.exe", "\\powershell.exe", "\\pwsh.exe", "\\regsvr32.exe", "\\rundll32.exe", "\\schtasks.exe", "\\wmic.exe", "\\wscript.exe"]
+        ParentImage|endswith: ["\\dism.exe", "\\pkgmgr.exe", "\\werfault.exe", "\\wermgr.exe"]
+    condition: selection
+level: high
+---
+title: "Wusa extrae bajo Windows"
+id: f21c63c2-db48-5b96-8c8a-72e8948b4691
+status: experimental
+description: "Wusa extrae bajo Windows"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\wusa.exe"
+        CommandLine|re: "(?i)/extract:\"?c:\\\\windows(?:\\\\|[\"\\s]|$)"
+    condition: selection
+level: high
+---
+title: "Makecab empaqueta un binario o un manifest"
+id: 0b554541-0df4-599b-808e-ce6be96835c3
+status: experimental
+description: "Makecab empaqueta un binario o un manifest"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\makecab.exe"
+        CommandLine|re: "(?i)^\\s*(?:\"[^\"]+\"|\\S+)\\s+\"?(?:c:\\\\windows\\\\system32\\\\[^\"]+\\.(?:dll|exe|sys)|[^\"]+\\.manifest)(?:[\"\\s]|$)"
+    condition: selection
+level: medium
+---
+title: "Manifest de autoelevable escrito"
+id: 443d2775-b964-53dc-a718-5abc2e8bf9aa
+status: experimental
+description: "Manifest de autoelevable escrito"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 11
+        TargetFilename|endswith: ["\\changepk.exe.manifest", "\\cliconfg.exe.manifest", "\\cmstp.exe.manifest", "\\compmgmtlauncher.exe.manifest", "\\computerdefaults.exe.manifest", "\\dism.exe.manifest", "\\eventvwr.exe.manifest", "\\fodhelper.exe.manifest", "\\mcx2prov.exe.manifest", "\\migwiz.exe.manifest", "\\perfmon.exe.manifest", "\\pkgmgr.exe.manifest", "\\sdclt.exe.manifest", "\\slui.exe.manifest", "\\sysprep.exe.manifest", "\\wscript.exe.manifest", "\\wsreset.exe.manifest", "\\wusa.exe.manifest"]
+        TargetFilename|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\", "C:\\Windows\\"]
+    condition: selection
+level: medium
+---
+title: "Herramienta de bypass de UAC en Image"
+id: 86cdac43-4004-51f8-ab27-3e83d5efdb82
+status: experimental
+description: "Herramienta de bypass de UAC en Image"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|re: "(?i)(?:^|\\\\)(?:uacme|akagi[^\\\\]*)\\.exe$"
+    condition: selection
+level: high
+---
+title: "Herramienta de bypass de UAC en ParentImage"
+id: e7e59fa0-6e68-5b55-bb8c-9152a40c8683
+status: experimental
+description: "Herramienta de bypass de UAC en ParentImage"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|re: "(?i)(?:^|\\\\)(?:uacme|akagi[^\\\\]*)\\.exe$"
+    condition: selection
+level: high
+---
+title: "Winpwnage en CommandLine"
+id: a8b9b9a6-eba3-5ceb-a2f7-e702f2dcc70e
+status: experimental
+description: "Winpwnage en CommandLine"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        CommandLine|contains: ["winpwnage.py", "winpwnage.exe"]
+    condition: selection
+level: high
+---
+title: "Winpwnage en ParentCommandLine"
+id: 2827e6eb-1213-5ff3-99a5-e8ebf14a0a87
+status: experimental
+description: "Winpwnage en ParentCommandLine"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentCommandLine|contains: ["winpwnage.py", "winpwnage.exe"]
+    condition: selection
+level: high
+---
+title: "DLL de autoelevación escrita en ruta de usuario"
+id: cf15c48f-7b13-5c72-9142-2db3aa5ea80e
+status: experimental
+description: "DLL de autoelevación escrita en ruta de usuario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 11
+        TargetFilename|endswith: ["\\comctl32.dll", "\\cryptbase.dll", "\\dismcore.dll", "\\elsext.dll", "\\gdiplus.dll", "\\mscoree.dll", "\\ntwdblib.dll", "\\osksupport.dll", "\\wdscore.dll", "\\wow64log.dll"]
+        TargetFilename|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: medium
+---
+title: "Carga de wow64log.dll"
+id: bce0e7f9-944a-5514-bcbc-f7970a87339e
+status: experimental
+description: "Carga de wow64log.dll"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1548.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 7
+        ImageLoaded|endswith: "\\wow64log.dll"
+    condition: selection
+level: high
 # winlog-hunter: WLH-022

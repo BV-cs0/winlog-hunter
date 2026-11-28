@@ -1,0 +1,231 @@
+title: "Acceso a ficheros de credenciales de navegador"
+id: 6df06091-0800-5bbd-ab22-179734644a60
+status: experimental
+description: "Acceso a ficheros de credenciales de navegador"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1555.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: [4656, 4663]
+        ObjectName|re: "(?i)\\\\(?:(?:chrome|edge|bravesoftware|opera software|opera|vivaldi)\\\\.*\\\\(?:login data|web data|cookies|local state)|firefox\\\\.*\\\\(?:logins\\.json|key4\\.db|signons\\.sqlite))$"
+    filter_programas:
+        ProcessName|startswith: ["C:\\Program Files\\", "C:\\Program Files (x86)\\"]
+    filter_navegador:
+        ProcessName|endswith: ["\\chrome.exe", "\\msedge.exe", "\\brave.exe", "\\opera.exe", "\\vivaldi.exe", "\\firefox.exe", "\\iexplore.exe"]
+    condition: selection and not filter_programas and not filter_navegador
+level: high
+---
+title: "Actividad de registro remoto para correlación"
+name: wlh043_winreg
+id: 9e9be616-0b0f-5d50-ad38-2aabfaa6ed08
+status: experimental
+description: "Correlacionar winreg con escritura administrativa por equipo y origen. Para orígenes distintos, exigir el mismo SID y los tres nombres de colmena."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: "\\IPC$"
+        RelativeTargetName: "winreg"
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104", "0.0.0.0/32", "::/128"]
+    condition: selection and not filter
+level: informational
+---
+title: "Escritura en recurso administrativo para correlación"
+name: wlh043_escritura
+id: d3bfbaed-be76-545e-9073-4a54570db028
+status: experimental
+description: "Escritura en recurso administrativo para correlación"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: ["\\C$", "\\ADMIN$"]
+        AccessMask|re: "(?i)^0x[0-9a-f]*[2367abef]$"
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104", "0.0.0.0/32", "::/128"]
+    condition: selection and not filter
+level: informational
+---
+title: "Acceso remoto a claves DPAPI"
+id: d22271a0-ab41-5699-9051-eb33c7db69da
+status: experimental
+description: "Acceso remoto a claves DPAPI"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1555
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: "\\IPC$"
+        RelativeTargetName: "protected_storage"
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104", "0.0.0.0/32", "::/128"]
+    condition: selection and not filter
+level: high
+---
+title: "Usuario restablece contraseña de cuenta de equipo"
+id: 1bd71fe4-5c5e-5204-85f1-9cee4cf72e48
+status: experimental
+description: "Usuario restablece contraseña de cuenta de equipo"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4724
+        TargetUserName|endswith: "$"
+    filter:
+        SubjectUserName|endswith: "$"
+    condition: selection and not filter
+level: high
+---
+title: "Cambio directo en SAM Account\\\\Users\\\\Names\\\\[^\\\\]+"
+id: 9847ad52-e1da-54ae-ac4f-17033337933f
+status: experimental
+description: "Cambio directo en SAM Account\\\\Users\\\\Names\\\\[^\\\\]+"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 12
+        EventType: "CreateKey"
+        TargetObject|re: "(?i)^HKLM\\\\SAM\\\\SAM\\\\Domains\\\\Account\\\\Users\\\\Names\\\\[^\\\\]+$"
+    condition: selection
+level: medium
+---
+title: "Cambio directo en SAM Builtin\\\\Aliases\\\\00000220\\\\C"
+id: f58abe10-6830-5189-bf0a-4344538ca884
+status: experimental
+description: "Cambio directo en SAM Builtin\\\\Aliases\\\\00000220\\\\C"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        EventType: "SetValue"
+        TargetObject|re: "(?i)^HKLM\\\\SAM\\\\SAM\\\\Domains\\\\Builtin\\\\Aliases\\\\00000220\\\\C$"
+    condition: selection
+level: high
+---
+title: "Cambio directo en SAM Account\\\\Users\\\\000001F4\\\\.+"
+id: f3f7a128-2736-599b-9b01-3b20ecf0ddb4
+status: experimental
+description: "Cambio directo en SAM Account\\\\Users\\\\000001F4\\\\.+"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        EventType: "SetValue"
+        TargetObject|re: "(?i)^HKLM\\\\SAM\\\\SAM\\\\Domains\\\\Account\\\\Users\\\\000001F4\\\\.+$"
+    condition: selection
+level: medium
+---
+title: "Cambio del secreto de la cuenta de equipo"
+id: b373f891-372f-573b-a32f-ff83dfbfc28b
+status: experimental
+description: "Cambio del secreto de la cuenta de equipo"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1003.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|startswith: "HKLM\\SECURITY\\Policy\\Secrets\\$MACHINE.ACC\\"
+    condition: selection
+level: low
+---
+title: "Aplicación de usuario registrada en DirectInput"
+id: 4cb20417-ceeb-54a3-92aa-96cab3630a9a
+status: experimental
+description: "Aplicación de usuario registrada en DirectInput"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1056.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|endswith: "\\Microsoft\\DirectInput\\MostRecentApplication\\Name"
+        Image|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: low
+---
+title: "Chrome solicita credenciales de Windows"
+id: 046217a5-703f-52bd-92fb-23bfdbe6c6ac
+status: experimental
+description: "Chrome solicita credenciales de Windows"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1555.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: [4624, 4625]
+        LogonType: 2
+        LogonProcessName: "Chrome"
+    condition: selection
+level: low
+---
+title: "Posible copia remota de SAM, SYSTEM o SECURITY"
+id: 8518ec71-7de3-552c-b712-aa9ca3f265e4
+status: experimental
+description: "Acceso a winreg y escritura administrativa en el mismo equipo desde el mismo origen."
+correlation:
+    type: temporal
+    rules: [wlh043_winreg, wlh043_escritura]
+    group-by: [Computer, IpAddress]
+    timespan: 5m
+level: high
+# winlog-hunter: WLH-043

@@ -1,6 +1,6 @@
 # Reglas Sigma
 
-Las 41 detecciones de winlog-hunter en formato [Sigma](https://sigmahq.io/), el estándar para compartir detecciones entre SIEM. Cada fichero lleva al final la regla de winlog-hunter a la que corresponde (`# winlog-hunter: WLH-0xx`). Un fichero puede contener varios documentos para distintos canales o correlaciones.
+Las 46 detecciones de winlog-hunter en formato [Sigma](https://sigmahq.io/), el estándar para compartir detecciones entre SIEM. Cada fichero lleva al final la regla de winlog-hunter a la que corresponde (`# winlog-hunter: WLH-0xx`). Un fichero puede contener varios documentos para distintos canales o correlaciones.
 
 - **WLH-001 a WLH-004** son correlaciones (Sigma 2): una regla base de un evento más una regla que cuenta eventos o valores distintos en una ventana de tiempo.
 - **WLH-032 y WLH-035** también describen correlaciones; otras reglas combinan fuentes de Security, System, Application y Sysmon.
@@ -28,3 +28,4 @@ Sigma describe qué eventos buscar, pero no toda la lógica del analizador. Esta
 - **Correlaciones.** La sesión anónima de WLH-032 exige en el motor una cuenta de máquina del propio equipo y sesión compatible. WLH-034 no alerta por 4985 aislado: requiere Sysmon 25 del mismo PID y equipo. Esa comparación no está representada como un evento simple en Sigma.
 - **Registro de eventos y tareas remotas.** WLH-037 y WLH-041 usan correlaciones ordenadas. Para las tareas, el backend debe equiparar los identificadores de sesión. Sigma usa una ventana de 30 minutos para esta correlación y el motor busca la sesión anterior en el intervalo cargado.
 - **Filtros de bajo ruido.** Las comparaciones de bits de WLH-026, de fechas de WLH-030 y de direcciones IP de WLH-031 no tienen equivalencia exacta en estas selecciones. Cada fichero declara sus aproximaciones. PsExec autorizado, credenciales alternativas NTLM y otras señales administrativas permanecen en severidad baja en el motor.
+- **Escalada y credenciales.** El spraying de SQL Server requiere extraer `SqlClient` de `Data2`. Para los cambios de driver se necesita normalizar `TargetFilename` y `Details` a `RutaDriver`. La correlación de tareas necesita extraer el nombre de `/tn`. El motor nativo también distingue la variante de copia de colmenas que usa dos IP y el mismo SID.

@@ -1,0 +1,162 @@
+title: "Acceso remoto a spoolss o efsrpc"
+id: 496f16ae-ec3f-57dd-9b72-34a32cae02c2
+status: experimental
+description: "Acceso remoto a spoolss o efsrpc"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1187
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: "\\IPC$"
+        RelativeTargetName: ["spoolss", "efsrpc"]
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104", "0.0.0.0/32", "::/128"]
+    condition: selection and not filter
+level: medium
+---
+title: "Conexión SMB saliente de System"
+name: wlh044_smb_saliente
+id: 67331662-b13b-55ea-be50-89aa8cc42eb6
+status: experimental
+description: "Correlacionar cinco DestinationIp distintas por equipo en cinco minutos o una conexión entrante de la misma IP en menos de un minuto."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1018
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Image: "System"
+        Initiated: "true"
+        DestinationPort: 445
+    condition: selection
+level: informational
+---
+title: "Conexión SMB entrante de System con SourcePort"
+name: wlh044_smb_entrada_origen
+id: ff554d00-484a-5382-8fb8-21c02ad5cabc
+status: experimental
+description: "Correlacionar con SMB saliente al extremo remoto en menos de un minuto."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1187
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Image: "System"
+        Initiated: "false"
+        SourcePort: 445
+    condition: selection
+level: informational
+---
+title: "Conexión SMB entrante de System con DestinationPort"
+name: wlh044_smb_entrada_destino
+id: 3cc89375-1792-5172-b324-b9616691a5b9
+status: experimental
+description: "Correlacionar con SMB saliente al extremo remoto en menos de un minuto."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1187
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        Image: "System"
+        Initiated: "false"
+        DestinationPort: 445
+    condition: selection
+level: informational
+---
+title: "Conexión de System a una pipe"
+name: wlh044_pipe
+id: 2c9a730a-44f6-51ec-a2f7-fe47e57dc675
+status: experimental
+description: "Correlacionar cinco PipeName distintas por equipo en cinco minutos."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1135
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 18
+        Image: "System"
+        PipeName|exists: true
+    condition: selection
+level: informational
+---
+title: "Barrido SMB de System"
+id: 4de3c85a-b1a9-5d8f-91ad-4077383f2bea
+status: experimental
+description: "Cinco destinos SMB distintos en cinco minutos."
+correlation:
+    type: value_count
+    rules: [wlh044_smb_saliente]
+    group-by: [Computer]
+    timespan: 5m
+    condition:
+        field: DestinationIp
+        gte: 5
+level: medium
+---
+title: "Enumeración remota de pipes"
+id: 330d265b-dea4-5502-9acf-bcf030e9b67e
+status: experimental
+description: "Cinco pipes distintas en cinco minutos."
+correlation:
+    type: value_count
+    rules: [wlh044_pipe]
+    group-by: [Computer]
+    timespan: 5m
+    condition:
+        field: PipeName
+        gte: 5
+level: medium
+---
+title: "Autenticación SMB en ambos sentidos con puerto en origen"
+id: 07b52362-1f55-5259-9439-f5ce4d518f3f
+status: experimental
+description: "Conexiones entrante y saliente de System con el mismo extremo remoto."
+correlation:
+    type: temporal
+    rules: [wlh044_smb_saliente, wlh044_smb_entrada_origen]
+    aliases:
+        extremo:
+            wlh044_smb_saliente: DestinationIp
+            wlh044_smb_entrada_origen: DestinationIp
+    group-by: [Computer, extremo]
+    timespan: 59s
+level: medium
+---
+title: "Autenticación SMB en ambos sentidos con puerto en destino"
+id: 4a0739bd-b064-5499-bbcb-b1c6a4cc8ccc
+status: experimental
+description: "Conexiones entrante y saliente de System con el mismo extremo remoto."
+correlation:
+    type: temporal
+    rules: [wlh044_smb_saliente, wlh044_smb_entrada_destino]
+    aliases:
+        extremo:
+            wlh044_smb_saliente: DestinationIp
+            wlh044_smb_entrada_destino: SourceIp
+    group-by: [Computer, extremo]
+    timespan: 59s
+level: medium
+# winlog-hunter: WLH-044

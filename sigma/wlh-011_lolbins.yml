@@ -138,4 +138,135 @@ detection:
 falsepositives:
     - Instalaciones y actualizaciones autorizadas
 level: low
+---
+title: "Scriptlet remoto con regsvr32 o un alias"
+id: 091fe89f-d1fa-59e7-a4a0-fa95138caa24
+status: experimental
+description: "Scriptlet remoto con regsvr32 o un alias"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1218.010
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        CommandLine|re: "(?i)/i:(?:https?|\\\\\\\\).*(?:scrobj|\\.sct|\\s\\.\\\\[^\\\\\\s]+\\.dll$)"
+    condition: selection
+level: high
+---
+title: "Proceso hijo de FTP"
+id: 8b9fbf6e-4ec6-5e43-80d0-ef5de54b4088
+status: experimental
+description: "Proceso hijo de FTP"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1059.003
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: "\\ftp.exe"
+    condition: selection
+level: high
+---
+title: "Intérprete de scripts iniciado por navegador"
+id: 58d53bfe-d6cc-51dd-9094-150cab45a0d4
+status: experimental
+description: "Intérprete de scripts iniciado por navegador"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1218
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\mshta.exe", "\\wscript.exe", "\\cscript.exe"]
+        ParentImage|endswith: ["\\iexplore.exe", "\\chrome.exe", "\\msedge.exe", "\\firefox.exe", "\\opera.exe", "\\brave.exe"]
+    condition: selection
+level: high
+---
+title: "Ejecución con explorer y la opción root"
+id: 1135aff5-a7db-5cd5-a24c-cc13149e28d2
+status: experimental
+description: "Ejecución con explorer y la opción root"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1202
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\explorer.exe"
+        CommandLine|re: "(?i)/root,\\s*\"?[^\"]+\\.exe(?:[\"\\s]|$)"
+    condition: selection
+level: medium
+---
+title: "Control_RunDLL con un fichero que no es CPL"
+id: 92e91549-ad23-5632-9d9f-84fd4ac276fa
+status: experimental
+description: "Control_RunDLL con un fichero que no es CPL"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1218.011
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\rundll32.exe"
+        CommandLine|re: "(?i)shell32\\.dll,control_rundll\\s+(?:\"[^\"]*(?<!\\.cpl)\"|\\S+(?<!\\.cpl)(?=\\s|$))"
+    condition: selection
+level: medium
+---
+title: "Shell hija de un paquete MSI"
+id: c77aa022-58bf-517f-ad6b-c7f48f82a029
+status: experimental
+description: "Shell hija de un paquete MSI"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1218.007
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\bitsadmin.exe", "\\certutil.exe", "\\cmd.exe", "\\cscript.exe", "\\mshta.exe", "\\powershell.exe", "\\pwsh.exe", "\\regsvr32.exe", "\\rundll32.exe", "\\schtasks.exe", "\\wmic.exe", "\\wscript.exe"]
+        ParentImage|re: "(?i)^c:\\\\windows\\\\installer\\\\msi[^\\\\]*\\.tmp$"
+    condition: selection
+level: medium
+---
+title: "Shell hija de MSBuild"
+id: de8349a8-9b18-5882-8685-b6edb25835e5
+status: experimental
+description: "Shell hija de MSBuild"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1127.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\bitsadmin.exe", "\\certutil.exe", "\\cmd.exe", "\\cscript.exe", "\\mshta.exe", "\\powershell.exe", "\\pwsh.exe", "\\regsvr32.exe", "\\rundll32.exe", "\\schtasks.exe", "\\wmic.exe", "\\wscript.exe"]
+        ParentImage|endswith: "\\msbuild.exe"
+    condition: selection
+level: low
 # winlog-hunter: WLH-011

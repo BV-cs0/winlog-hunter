@@ -100,4 +100,23 @@ detection:
 falsepositives:
     - Administración autorizada de bases de datos
 level: medium
+---
+title: "Shell interactiva iniciada por proceso del sistema"
+id: fdcb9f20-bcc3-5e86-af67-e1eeaa2d6709
+status: experimental
+description: "Shell interactiva iniciada por proceso del sistema"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1059
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        ParentImage|endswith: ["\\svchost.exe", "\\services.exe", "\\spoolsv.exe", "\\lsass.exe", "\\winlogon.exe", "\\dllhost.exe", "\\fxssvc.exe", "\\wermgr.exe", "\\rundll32.exe", "\\regsvr32.exe"]
+        CommandLine|re: "(?i)^\\s*\"?(?:[a-z]:\\\\[^\"]*\\\\)?(?:cmd|powershell)(?:\\.exe)?\"?\\s*$"
+    condition: selection
+level: high
 # winlog-hunter: WLH-024

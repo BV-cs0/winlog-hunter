@@ -128,4 +128,22 @@ detection:
         Image|endswith: ["\\mstsc.exe", "\\msrdc.exe", "\\rdcman.exe", "\\mremoteng.exe", "\\remotedesktop.exe", "\\windowsapp.exe", "\\msrdcw.exe"]
     condition: selection and not filter
 level: low
+---
+title: "Canal virtual RDP MS_T120"
+id: cea86ea5-51e7-5dd3-b96e-52c2e2a43513
+status: experimental
+description: "Canal virtual RDP MS_T120"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1210
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational"
+        EventID: 148
+        ChannelName: "MS_T120"
+    condition: selection
+level: high
 # winlog-hunter: WLH-040

@@ -1,0 +1,97 @@
+title: "Accesibilidad lanza un intérprete o herramienta de administración"
+id: eea75574-d492-5693-8bdd-e67fb1928101
+status: experimental
+description: "Accesibilidad lanza un intérprete o herramienta de administración"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1546.008
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\bitsadmin.exe", "\\certutil.exe", "\\cmd.exe", "\\cscript.exe", "\\mshta.exe", "\\powershell.exe", "\\pwsh.exe", "\\regsvr32.exe", "\\rundll32.exe", "\\schtasks.exe", "\\wmic.exe", "\\wscript.exe", "\\whoami.exe", "\\net.exe", "\\net1.exe"]
+        ParentImage|endswith: ["\\osk.exe", "\\sethc.exe", "\\utilman.exe", "\\magnify.exe", "\\narrator.exe", "\\displayswitch.exe", "\\atbroker.exe"]
+    condition: selection
+level: high
+---
+title: "Shim aplicado a un ejecutable de Windows"
+id: 56cfd9ce-1ad9-55f9-93af-0961b85f0b63
+status: experimental
+description: "Shim aplicado a un ejecutable de Windows"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1546.011
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Application-Experience/Program-Telemetry"
+        EventID: 500
+        ExePath|startswith: ["C:\\Windows\\System32\\", "C:\\Windows\\SysWOW64\\"]
+        # Windows aplica a diario shims propios; solo los que inyectan o redirigen son señal fuerte.
+        FixName: ["InjectDll", "CorrectFilePaths", "RedirectEXE", "RedirectShortcut", "ShimViaEAT",
+                  "LoadLibraryRedirect", "VirtualRegistry", "TerminateExe"]
+    condition: selection
+level: medium
+---
+title: "Base de compatibilidad instalada desde ruta de usuario"
+id: a4442f19-3a9a-531a-b994-66eaa1278b12
+status: experimental
+description: "Base de compatibilidad instalada desde ruta de usuario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1546.011
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\sdbinst.exe"
+        CommandLine|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+        CommandLine|contains|all: [".sdb"]
+    condition: selection
+level: high
+---
+title: "Cambio en catálogo Winsock medium"
+id: a08e8c12-8cf4-502e-85e6-80fd747968c8
+status: experimental
+description: "Cambio en catálogo Winsock medium"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1547
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Winsock-WS2HELP/Operational"
+        EventID: 1
+    filter:
+        Installer|startswith: ["C:\\Program Files\\", "C:\\Program Files (x86)\\"]
+    condition: selection and not filter
+level: medium
+---
+title: "Cambio en catálogo Winsock low"
+id: 49e33ad5-28e6-5a23-8b3d-26e78b07015b
+status: experimental
+description: "Cambio en catálogo Winsock low"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1547
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Winsock-WS2HELP/Operational"
+        EventID: 1
+        Installer|startswith: ["C:\\Program Files\\", "C:\\Program Files (x86)\\"]
+    condition: selection
+level: low
+# winlog-hunter: WLH-046

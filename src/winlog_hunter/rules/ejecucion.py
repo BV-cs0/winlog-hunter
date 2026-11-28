@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import re
 
+from .base import _TOKEN_COMANDO
+
 from .base import _browser_root, _bursts, _debugger_process, _is_sysmon, _program_files_path, _user_path, _windows_path
 
 from .base import (Config, ENCODED, Event, Hit, Iterator, UNKNOWN, _LOLBINS, _OFFICE, _POWERSHELL, _PS_INDICATORS, _SCRIPT_BLOCK_INDICATORS, _SHELLS, _exe, _processes, _truncate, decode_powershell, rule)
 
 
 # Referencia: LOLBAS. Se conservan intactas las selecciones anteriores.
+_INTERPRETES = {"cmd.exe", "powershell.exe", "pwsh.exe", "python.exe", "pythonw.exe"}
+
 _MORE_LOLBINS = [
     ("pcalua.exe", r"(?:^|\s)-a\s+", "T1202", "ejecución indirecta con pcalua"),
     # Los dos operandos pueden tener cualquier extensión: XML/XSL es el contenido.
@@ -133,6 +137,36 @@ def lolbins(events: list[Event], cfg: Config) -> Iterator[Hit]:
                        "línea_de_comandos": _truncate(p.command_line)},
                       mitre=["T1220"] if _exe(p.parent) == "msxsl.exe" else ["T1218"])
             continue
+        padre = _exe(p.parent)
+        comando = p.command_line.lower()
+        motivo, nivel, tecnica = "", "high", "T1218"
+        argumentos = _TOKEN_COMANDO.findall(comando) if "/i:" in comando else []
+        alias_dll = bool(argumentos and re.fullmatch(r"\.\\[^\\]+\.dll", argumentos[-1][0] or argumentos[-1][1])
+                         and _exe(argumentos[-1][0] or argumentos[-1][1]) == exe.removesuffix(".exe") + ".dll"
+                         and re.search(r"\s/u\s", comando) and re.search(r"\s/s\s", comando))
+        # Un intérprete que solo cita el texto no ejecuta nada; el hijo regsvr32 se evalúa aparte.
+        if (re.search(r"/i:(?:https?|\\\\)", comando) and ("scrobj" in comando or ".sct" in comando or alias_dll)
+                and exe not in _INTERPRETES):
+            motivo, tecnica = "ejecución remota compatible con regsvr32", "T1218.010"
+        elif padre == "ftp.exe":
+            motivo, tecnica = "FTP lanzó un proceso hijo", "T1059.003"
+        elif exe in {"mshta.exe", "wscript.exe", "cscript.exe"} and padre in {
+                "iexplore.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe"}:
+            motivo = "navegador lanzó un intérprete de scripts"
+        elif exe == "explorer.exe" and re.search(r'/root,\s*"?[^"\r\n]+\.exe(?:"|\s|$)', comando):
+            motivo, nivel, tecnica = "ejecución con explorer /root", "medium", "T1202"
+        elif exe == "rundll32.exe":
+            cpl = re.search(r'shell32\.dll,control_rundll\s+(?:"([^"]+)"|([^\s"]+))', comando)
+            if cpl and not (cpl[1] or cpl[2]).endswith(".cpl"):
+                motivo, nivel, tecnica = "Control_RunDLL con un fichero ajeno al Panel de control", "medium", "T1218.011"
+        if exe in _SHELLS and re.fullmatch(r"c:\\windows\\installer\\msi[^\\]*\.tmp", p.parent.lower()):
+            motivo, nivel, tecnica = "shell hija de un paquete MSI", "medium", "T1218.007"
+        elif exe in _SHELLS and padre == "msbuild.exe":
+            motivo, nivel, tecnica = "shell hija de MSBuild", "low", "T1127.001"
+        if motivo:
+            yield Hit([p.event], motivo, {"proceso": p.image, "proceso_padre": p.parent,
+                      "línea_de_comandos": _truncate(p.command_line)}, severity=nivel, mitre=[tecnica])
+            continue
         for pattern, mitre, technique in _LOLBINS_POR_NOMBRE.get(exe, ()):
             if pattern.search(p.command_line):
                 name = exe
@@ -182,6 +216,17 @@ def server_shell(events: list[Event], cfg: Config) -> Iterator[Hit]:
         # explorer.exe /factory,{CLSID} -Embedding lo lanza Windows a diario: no es DCOM remoto.
         activation = parent == "svchost.exe" and child in {"mmc.exe", "explorer.exe", "excel.exe"} and bool(re.search(
             r"(?:^|\s)[-/]embedding(?:\s|$)", p.command_line, re.I)) and not re.search(r"/factory,", p.command_line, re.I)
+        interactiva = False
+        if child in {"cmd.exe", "powershell.exe"} and parent in {
+                "svchost.exe", "services.exe", "spoolsv.exe", "lsass.exe", "winlogon.exe",
+                "dllhost.exe", "fxssvc.exe", "wermgr.exe", "rundll32.exe", "regsvr32.exe"}:
+            comando = _TOKEN_COMANDO.fullmatch(p.command_line.strip())
+            interactiva = bool(comando and _exe(comando[1] or comando[2]).removesuffix(".exe") == child.removesuffix(".exe"))
+        if interactiva:
+            yield Hit([p.event], "Shell interactiva lanzada por un proceso del sistema",
+                      {"proceso_padre": p.parent, "proceso_hijo": p.image,
+                       "línea_de_comandos": p.command_line}, mitre=["T1059"])
+            continue
         if not (shell or activation):
             continue
         yield Hit([p.event], f"{parent} lanzó {child} en {p.event.computer or UNKNOWN}",
@@ -366,6 +411,10 @@ def code_injection(events: list[Event], cfg: Config) -> Iterator[Hit]:
                        "tipo": first.get("Type"), "dirección_del_hilo": first.get("StartAddress")}, severity=severity)
 
 
+_DLL_FANTASMA = set("""
+    ualapi.dll windowscoredeviceinfo.dll wow64log.dll phoneinfo.dll wlbsctrl.dll
+    tsmsisrv.dll tsvipsrv.dll wptsextensions.dll cdpsgshims.dll cdpsshims.dll
+""".split())
 _HIJACK_DLLS = {"wwlib.dll", "version.dll", "dbghelp.dll", "cdpsshims.dll", "wlbsctrl.dll"}
 _DLL_LOADER_PAIRS = {("winword.exe", "wwlib.dll"), ("svchost.exe", "cdpsshims.dll"),
                      ("svchost.exe", "wlbsctrl.dll")}
@@ -381,6 +430,12 @@ def suspicious_dll(events: list[Event], cfg: Config) -> Iterator[Hit]:
             continue
         image, dll = e.get("Image"), e.get("ImageLoaded")
         if not image or not dll or not dll.lower().endswith(".dll"):
+            continue
+        nombre = _exe(dll)
+        office = _program_files_path(dll) and bool(re.search(r"\\microsoft office(?: \d+)?\\", dll, re.I))
+        if nombre in _DLL_FANTASMA or nombre == "wwlib.dll" and not office:
+            yield Hit([e], "Carga de DLL fantasma o de Office sin firma fuera de su ubicación",
+                      {"proceso": image, "dll": dll}, severity="high")
             continue
         if _windows_path(dll) or _program_files_path(dll) or _debugger_process(image):
             continue

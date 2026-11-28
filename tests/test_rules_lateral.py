@@ -159,7 +159,9 @@ class MovimientoRemoto(unittest.TestCase):
     def test_canales_planificados_y_consultas(self):
         plan = planificar()
         consultas = " ".join(consultas_xpath(plan.ids))
-        for canal, evento in ((WINRM, 91), (WINRM, 169), (RCM, 1149), (CORE, 131)):
+        for canal, evento in ((WINRM, 91), (WINRM, 169), (RCM, 1149), (CORE, 131), (CORE, 148),
+                              ("Microsoft-Windows-Application-Experience/Program-Telemetry", 500),
+                              ("Microsoft-Windows-Winsock-WS2HELP/Operational", 1)):
             self.assertIn(canal, local.LOGS)
             self.assertIn(canal, local.AUDIT_LOG_SIZES)
             self.assertTrue(plan.acepta(ev(evento, channel=canal)))

@@ -1,4 +1,4 @@
-<!-- Configuración filtrada para winlog-hunter: eventos 1, 2, 3, 7, 8, 10, 11, 12-14, 17-21 y 25.
+<!-- Configuración filtrada para winlog-hunter: eventos 1, 2, 3, 6, 7, 8, 10, 11, 12-14, 17-21 y 25.
 Los include vacíos solo desactivan eventos no utilizados. Las exclusiones ganan;
 no hay exclusión global de DLL de Windows ni de conexiones de red locales.
 Los filtros compuestos llevan Rule groupRelation="and" y las alternativas se unen con "or".
@@ -82,6 +82,26 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     </RuleGroup>
     <RuleGroup name="Red de intérpretes y LOLBins" groupRelation="or">
       <NetworkConnect onmatch="include">
+        <Rule name="System en SMB como destino" groupRelation="and">
+          <Image condition="is">System</Image>
+          <DestinationPort condition="is">445</DestinationPort>
+        </Rule>
+        <Rule name="System en SMB como origen" groupRelation="and">
+          <Image condition="is">System</Image>
+          <SourcePort condition="is">445</SourcePort>
+        </Rule>
+        <Rule name="WinRM local desde usuario" groupRelation="and">
+          <Image condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</Image>
+          <SourceIp condition="is any">127.0.0.1;::1;::ffff:127.0.0.1</SourceIp>
+          <DestinationIp condition="is any">127.0.0.1;::1;::ffff:127.0.0.1</DestinationIp>
+          <DestinationPort condition="is any">5985;5986</DestinationPort>
+        </Rule>
+        <Rule name="WinRM local con puerto en origen" groupRelation="and">
+          <Image condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</Image>
+          <SourceIp condition="is any">127.0.0.1;::1;::ffff:127.0.0.1</SourceIp>
+          <DestinationIp condition="is any">127.0.0.1;::1;::ffff:127.0.0.1</DestinationIp>
+          <SourcePort condition="is any">5985;5986</SourcePort>
+        </Rule>
         <Image condition="end with">\powershell.exe</Image>
         <Image condition="end with">\pwsh.exe</Image>
         <Image condition="end with">\cmd.exe</Image>
@@ -118,6 +138,52 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     </RuleGroup>
     <RuleGroup name="Carga de DLL filtrada" groupRelation="or">
       <ImageLoad onmatch="include">
+        <ImageLoaded condition="end with">\wow64log.dll</ImageLoaded>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\cdpsgshims.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\cdpsshims.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\phoneinfo.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\tsmsisrv.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\tsvipsrv.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\ualapi.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\windowscoredeviceinfo.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\wlbsctrl.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\wptsextensions.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de riesgo sin firma" groupRelation="and">
+          <ImageLoaded condition="end with">\wwlib.dll</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
+        <Rule name="DLL de impresión sin firma" groupRelation="and">
+          <Image condition="end with">\spoolsv.exe</Image>
+          <ImageLoaded condition="contains">\spool\drivers\</ImageLoaded>
+          <Signed condition="is">false</Signed>
+        </Rule>
         <Rule name="DLL sin firma fuera de instalación" groupRelation="and">
           <Signed condition="is">false</Signed>
           <ImageLoaded condition="excludes any">C:\Windows\System32\;C:\Windows\SysWOW64\;C:\Windows\WinSxS\;C:\Program Files\;C:\Program Files (x86)\</ImageLoaded>
@@ -200,6 +266,132 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     </RuleGroup>
     <RuleGroup name="Ficheros de persistencia y credenciales" groupRelation="or">
       <FileCreate onmatch="include">
+        <Rule name="Driver escrito por proceso de usuario" groupRelation="and">
+          <Image condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</Image>
+          <TargetFilename condition="end with">.sys</TargetFilename>
+        </Rule>
+        <Rule name="Binario escrito por la cola de impresión" groupRelation="and">
+          <Image condition="end with">\spoolsv.exe</Image>
+          <TargetFilename condition="end with">.dll</TargetFilename>
+          <TargetFilename condition="excludes any">C:\Windows\System32\spool\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="Binario escrito por la cola de impresión" groupRelation="and">
+          <Image condition="end with">\spoolsv.exe</Image>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+          <TargetFilename condition="excludes any">C:\Windows\System32\spool\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\comctl32.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\cryptbase.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\dismcore.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\elsext.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\gdiplus.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\mscoree.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\ntwdblib.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\osksupport.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\wdscore.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="DLL de autoelevación en ruta de usuario" groupRelation="and">
+          <TargetFilename condition="end with">\wow64log.dll</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\changepk.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\cliconfg.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\cmstp.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\compmgmtlauncher.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\computerdefaults.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\dism.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\eventvwr.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\fodhelper.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\mcx2prov.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\migwiz.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\perfmon.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\pkgmgr.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\sdclt.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\slui.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\sysprep.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\wscript.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\wsreset.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
+        <Rule name="Manifest de autoelevación" groupRelation="and">
+          <TargetFilename condition="end with">\wusa.exe.manifest</TargetFilename>
+          <TargetFilename condition="contains any">C:\Users\;C:\ProgramData\;\Temp\;\AppData\;C:\Windows\Temp\;C:\Windows\</TargetFilename>
+        </Rule>
         <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
         <TargetFilename condition="contains">\Windows\System32\spool\drivers\</TargetFilename>
         <TargetFilename condition="contains">\Windows\System32\sysprep\</TargetFilename>
@@ -227,6 +419,52 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     </RuleGroup>
     <RuleGroup name="Registro de persistencia y defensas" groupRelation="or">
       <RegistryEvent onmatch="include">
+        <TargetObject condition="end with">\App Paths\cmmgr32.exe\ProfileInstallPath</TargetObject>
+        <TargetObject condition="end with">\SymbolicLinkValue</TargetObject>
+        <TargetObject condition="begin with">HKLM\SAM\SAM\Domains\</TargetObject>
+        <TargetObject condition="begin with">HKLM\SECURITY\Policy\Secrets\$MACHINE.ACC\</TargetObject>
+        <TargetObject condition="end with">\Microsoft\DirectInput\MostRecentApplication\Name</TargetObject>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\Windows NT\CurrentVersion\Ports\</TargetObject>
+          <TargetObject condition="end with">.dll</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\Windows NT\CurrentVersion\Ports\</TargetObject>
+          <TargetObject condition="end with">.exe</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\Print\Printers\</TargetObject>
+          <TargetObject condition="end with">\SpoolDirectory</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\CopyFiles\</TargetObject>
+          <TargetObject condition="end with">\Module</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\WindowsUpdate\Orchestrator\UScheduler\</TargetObject>
+          <TargetObject condition="end with">\cmdLine</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\WindowsUpdate\Orchestrator\UScheduler\</TargetObject>
+          <TargetObject condition="end with">\startArg</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\WindowsUpdate\Orchestrator\UScheduler\</TargetObject>
+          <TargetObject condition="end with">\pauseArg</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+        </Rule>
+        <Rule name="Valor de registro sensible" groupRelation="and">
+          <TargetObject condition="contains">\Services\</TargetObject>
+          <TargetObject condition="end with">\ImagePath</TargetObject>
+          <EventType condition="is">SetValue</EventType>
+          <Details condition="end with">.sys</Details>
+        </Rule>
         <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
         <TargetObject condition="contains">\Policies\Explorer\Run</TargetObject>
         <TargetObject condition="contains">\Winlogon\Shell</TargetObject>
@@ -303,6 +541,13 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     </RuleGroup>
     <RuleGroup name="Canales de herramientas remotas" groupRelation="or">
       <PipeEvent onmatch="include">
+        <PipeName condition="end with">-stdin</PipeName>
+        <PipeName condition="end with">-stdout</PipeName>
+        <PipeName condition="end with">-stderr</PipeName>
+        <Rule name="Conexiones remotas de System a pipes" groupRelation="and">
+          <Image condition="is">System</Image>
+          <EventType condition="is">ConnectPipe</EventType>
+        </Rule>
         <PipeName condition="contains">psexesvc</PipeName>
         <PipeName condition="contains">remcom</PipeName>
         <PipeName condition="contains">paexec</PipeName>
@@ -335,8 +580,8 @@ En la raíz de C: se incluye Program.exe, candidato que comprueba WLH-030. -->
     <RuleGroup name="Evento no utilizado ProcessTerminate" groupRelation="or">
       <ProcessTerminate onmatch="include" />
     </RuleGroup>
-    <RuleGroup name="Evento no utilizado DriverLoad" groupRelation="or">
-      <DriverLoad onmatch="include" />
+    <RuleGroup name="Cargas de drivers" groupRelation="or">
+      <DriverLoad onmatch="exclude" />
     </RuleGroup>
     <RuleGroup name="Evento no utilizado RawAccessRead" groupRelation="or">
       <RawAccessRead onmatch="include" />

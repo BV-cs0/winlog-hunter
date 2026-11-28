@@ -39,4 +39,44 @@ falsepositives:
     - Extensiones de shell o complementos legítimos sin firma instalados por usuario
     - Word portable con sus bibliotecas; requiere revisión antes de atribuir un ataque
 level: medium
+---
+title: "Carga de DLL fantasma sin firma"
+id: 5ef5165c-7ea0-5a4d-8596-abb9f1833e98
+status: experimental
+description: "Carga de DLL fantasma sin firma"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1574.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 7
+        ImageLoaded|endswith: ["\\cdpsgshims.dll", "\\cdpsshims.dll", "\\phoneinfo.dll", "\\tsmsisrv.dll", "\\tsvipsrv.dll", "\\ualapi.dll", "\\windowscoredeviceinfo.dll", "\\wlbsctrl.dll", "\\wow64log.dll", "\\wptsextensions.dll"]
+        Signed: "false"
+    condition: selection
+level: high
+---
+title: "Carga de wwlib.dll sin firma fuera de Office"
+id: fc672e33-7ce8-5cee-9a40-3c0b68cf9e08
+status: experimental
+description: "Carga de wwlib.dll sin firma fuera de Office"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1574.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 7
+        ImageLoaded|endswith: "\\wwlib.dll"
+        Signed: "false"
+    filter:
+        ImageLoaded|re: "(?i)^c:\\\\program files(?: \\(x86\\))?\\\\.*\\\\?microsoft office(?: \\d+)?\\\\"
+    condition: selection and not filter
+level: high
 # winlog-hunter: WLH-027

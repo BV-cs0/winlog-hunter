@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import binascii
 import html
+from ipaddress import ip_address
 import ntpath
 import re
 from bisect import bisect_left, bisect_right
@@ -647,3 +648,46 @@ _SCRIPT_BLOCK_INDICATORS = [
 ]
 
 
+
+
+_TOKEN_COMANDO = re.compile(r'"([^"]*)"|([^\s"]+)')
+
+
+def _argumento(comando: str, opcion: str) -> str:
+    """Lee el valor de una opción, con comillas opcionales."""
+    separador = r"\s+" if opcion.endswith(" ") else r"\s*"
+    patron = r"(?:^|\s)" + re.escape(opcion.rstrip()) + separador + r'(?:"([^"]+)"|([^\s"]+))'
+    coincidencia = re.search(patron, comando, re.I)
+    return (coincidencia[1] or coincidencia[2]) if coincidencia else ""
+
+
+def _bajo_windows(ruta: str) -> bool:
+    return ntpath.normpath(ruta).lower().startswith("c:\\windows\\")
+
+
+def _ipc(e: Event) -> bool:
+    return e.get("ShareName").lower().split("\\")[-1] == "ipc$"
+
+
+def _pipe_smb(e: Event) -> str:
+    return e.get("RelativeTargetName").lower().removeprefix("\\").removeprefix("pipe\\")
+
+
+_LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+
+
+
+def _ruta_usuario(ruta: str) -> bool:
+    """Incluye ProgramData y subdirectorios de perfil o temporales."""
+    normalizada = ntpath.normpath(ruta.strip('"')).lower()
+    return (_user_path(normalizada) or normalizada.startswith("c:\\programdata\\")
+            or "\\temp\\" in normalizada or "\\appdata\\" in normalizada)
+
+
+def _ip_remota(texto: str) -> bool:
+    try:
+        ip = ip_address(texto)
+    except ValueError:
+        return False
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    return not (ip.is_loopback or ip.is_unspecified)

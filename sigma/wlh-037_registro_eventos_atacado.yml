@@ -88,4 +88,25 @@ detection:
         param1: ["EventLog", "Windows Event Log", "Registro de eventos de Windows"]
     condition: selection
 level: high
+---
+title: "Acceso remoto al canal del registro de eventos"
+id: b4d970d5-3277-51f5-9f9e-5bc7b56dd255
+status: experimental
+description: "Acceso remoto al canal del registro de eventos"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1562.002
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: "\\IPC$"
+        RelativeTargetName: "eventlog"
+    filter:
+        IpAddress|cidr: ["127.0.0.0/8", "::1/128", "::ffff:127.0.0.0/104", "0.0.0.0/32", "::/128"]
+    condition: selection and not filter
+level: medium
 # winlog-hunter: WLH-037

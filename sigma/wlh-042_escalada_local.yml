@@ -1,0 +1,332 @@
+title: "Shell como SYSTEM desde un padre en ruta de usuario"
+id: 7bc3c9ff-c5c7-5cf8-983c-5d71f6fe40c0
+status: experimental
+description: "Shell como SYSTEM desde un padre en ruta de usuario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1134.001
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: ["\\bitsadmin.exe", "\\certutil.exe", "\\cmd.exe", "\\cscript.exe", "\\mshta.exe", "\\powershell.exe", "\\pwsh.exe", "\\regsvr32.exe", "\\rundll32.exe", "\\schtasks.exe", "\\wmic.exe", "\\wscript.exe", "\\whoami.exe"]
+        ParentImage|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+        User: ["SYSTEM", "SISTEMA", "NT AUTHORITY\\SYSTEM", "NT AUTHORITY\\SISTEMA"]
+    condition: selection
+level: high
+---
+title: "Inicio de red NTLM anónimo local"
+id: bf5eb3f4-af53-5ae2-aff9-4cc731277ce8
+status: experimental
+description: "Inicio de red NTLM anónimo local"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4624
+        IpAddress: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        LogonType: 3
+        TargetUserName: "ANONYMOUS LOGON"
+        LogonProcessName|startswith: "NtLmSsp"
+    condition: selection
+level: medium
+---
+title: "Inicio de red Kerberos de usuario local"
+id: 5fd3bee3-6a7a-5828-9a6c-a3cad84e97df
+status: experimental
+description: "Inicio de red Kerberos de usuario local"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4624
+        IpAddress: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        LogonType: 3
+        AuthenticationPackageName: "Kerberos"
+    filter:
+        TargetUserName|endswith: "$"
+    condition: selection and not filter
+level: medium
+---
+title: "SMB local de cuenta de equipo a pipe no habitual"
+id: 22786a5a-4f54-5978-abbe-5455d2b4260f
+status: experimental
+description: "SMB local de cuenta de equipo a pipe no habitual"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 5145
+        ShareName|endswith: "\\IPC$"
+        IpAddress: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        SubjectUserName|endswith: "$"
+    filter:
+        RelativeTargetName: ["atsvc", "browser", "efsrpc", "epmapper", "eventlog", "initshutdown", "lsarpc", "lsass", "netlogon", "ntsvcs", "paexec", "protected_storage", "psexesvc", "remcom_communicaton", "samr", "spoolss", "srvsvc", "svcctl", "winreg", "wkssvc"]
+    condition: selection and not filter
+level: medium
+---
+title: "WinRM en loopback con DestinationPort"
+id: c0214b35-319c-5b36-b103-158466d52d8a
+status: experimental
+description: "WinRM en loopback con DestinationPort"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        SourceIp: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        DestinationIp: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        DestinationPort: [5985, 5986]
+        Image|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "WinRM en loopback con SourcePort"
+id: c8e871b6-ea86-5e38-b5c2-a6a7330bd5df
+status: experimental
+description: "WinRM en loopback con SourcePort"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 3
+        SourceIp: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        DestinationIp: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
+        SourcePort: [5985, 5986]
+        Image|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: high
+---
+title: "DLL sin firma cargada por la cola de impresión"
+id: 4892acc2-d411-5b22-a7d8-2341c8a6c939
+status: experimental
+description: "DLL sin firma cargada por la cola de impresión"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 7
+        Image|endswith: "\\spoolsv.exe"
+        ImageLoaded|contains: "\\spool\\drivers\\"
+        ImageLoaded|endswith: ".dll"
+        Signed: "false"
+    condition: selection
+level: high
+---
+title: "Cola de impresión escribe un binario fuera de su ruta"
+id: f4bd4db4-f2f5-5df9-b485-cf51befd9ea2
+status: experimental
+description: "Cola de impresión escribe un binario fuera de su ruta"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 11
+        Image|endswith: "\\spoolsv.exe"
+        TargetFilename|endswith: [".dll", ".exe"]
+    filter:
+        TargetFilename|startswith: ["C:\\Windows\\System32\\spool\\", "C:\\Windows\\Temp\\"]
+    condition: selection and not filter
+level: high
+---
+title: "Configuración sensible de impresora"
+id: 2662e3ea-ad3c-5196-95e8-7f8163851d65
+status: experimental
+description: "Configuración sensible de impresora"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|re: "(?i)\\\\print\\\\printers\\\\[^\\\\]+\\\\(?:spooldirectory|copyfiles\\\\[^\\\\]+\\\\module)$"
+    condition: selection
+level: high
+---
+title: "Puerto de impresora apunta a un binario"
+id: 0d4c5fb3-c279-531a-ae6b-ba5043506c08
+status: experimental
+description: "Puerto de impresora apunta a un binario"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        Image|endswith: "\\spoolsv.exe"
+        TargetObject|re: "(?i)\\\\windows nt\\\\currentversion\\\\ports\\\\[a-z]:\\\\.+\\.(?:dll|exe)$"
+    condition: selection
+level: high
+---
+title: "Orquestador de Windows Update ejecuta una shell"
+id: bc1755b9-1491-585f-b412-0f03510afc2d
+status: experimental
+description: "Orquestador de Windows Update ejecuta una shell"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|re: "(?i)\\\\uscheduler\\\\.+\\\\(?:cmdline|startarg|pausearg)$"
+        Details|re: "(?i)\\b(?:cmd|powershell|pwsh|whoami|mshta|wscript|cscript|rundll32|regsvr32)\\b"
+    condition: selection
+level: high
+---
+title: "Enlace simbólico en el registro"
+id: 2e8399a3-56eb-54f5-b1ad-a00bd660f2b5
+status: experimental
+description: "Enlace simbólico en el registro"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 13
+        TargetObject|endswith: "\\SymbolicLinkValue"
+    filter:
+        Image|startswith: "C:\\Windows\\"
+    condition: selection and not filter
+level: high
+---
+title: "Servidor usa credenciales explícitas"
+id: c0bc8cf1-c214-553b-873e-c8e8d8b4daa1
+status: experimental
+description: "Servidor usa credenciales explícitas"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4648
+        ProcessName|re: "(?i)\\\\(?:(?:w3wp|httpd|nginx|tomcat[^\\\\]*|php-cgi|sqlservr)\\.exe|[^\\\\]*tomcat[^\\\\]*\\\\.*\\\\java\\.exe)$"
+    condition: selection
+level: high
+---
+title: "Servidor inicia sesión vía Advapi"
+id: ec8fc29b-aada-51d0-bc5a-478a86a85402
+status: experimental
+description: "Servidor inicia sesión vía Advapi"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Security"
+        EventID: 4624
+        ProcessName|re: "(?i)\\\\(?:(?:w3wp|httpd|nginx|tomcat[^\\\\]*|php-cgi|sqlservr)\\.exe|[^\\\\]*tomcat[^\\\\]*\\\\.*\\\\java\\.exe)$"
+        LogonProcessName|startswith: "Advapi"
+    condition: selection
+level: high
+---
+title: "Tarea creada con XML de usuario"
+name: wlh042_tarea_creada
+id: 6ac64111-048b-574e-94b5-3c579f9b7804
+status: experimental
+description: "Elevar a high si el mismo padre ejecuta schtasks /run para el mismo nombre de tarea en menos de cinco minutos."
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1068
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\schtasks.exe"
+        CommandLine|contains|all: [" /create", " /xml "]
+        CommandLine|contains: ["C:\\Users\\", "C:\\ProgramData\\", "\\Temp\\", "\\AppData\\"]
+    condition: selection
+level: medium
+---
+title: "Ejecución de una tarea con schtasks"
+name: wlh042_tarea_ejecutada
+id: c1b7015e-c990-4859-a970-47946b2207f2
+status: experimental
+description: "Evento para correlacionar con la creación de una tarea."
+author: Bryan Valenzuela
+date: 2026-11-28
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "Microsoft-Windows-Sysmon/Operational"
+        EventID: 1
+        Image|endswith: "\\schtasks.exe"
+        CommandLine|contains: " /run"
+    condition: selection
+level: informational
+---
+title: "Tarea de usuario creada y ejecutada por el mismo proceso padre"
+id: f2094661-2c65-48e3-b566-0208b9a2c144
+status: experimental
+description: "El backend debe extraer NombreTarea de la opción /tn en ambos eventos."
+correlation:
+    type: temporal_ordered
+    rules: [wlh042_tarea_creada, wlh042_tarea_ejecutada]
+    group-by: [Computer, ParentProcessGuid, NombreTarea]
+    timespan: 5m
+level: high
+# winlog-hunter: WLH-042

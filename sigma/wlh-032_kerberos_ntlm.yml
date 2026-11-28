@@ -89,4 +89,40 @@ correlation:
         - Computer
     timespan: 5m
 level: high
+---
+title: "Error de autenticación de NETLOGON"
+id: 9ee7b300-133c-51f5-aae6-df417fdfa5de
+status: experimental
+description: "Error de autenticación de NETLOGON"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1210
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "System"
+        EventID: 5805
+        Provider_Name: "NETLOGON"
+    condition: selection
+level: medium
+---
+title: "Advertencia de canal seguro de NETLOGON"
+id: 2e0ad116-117a-5ddf-8224-63a7f29943e1
+status: experimental
+description: "Advertencia de canal seguro de NETLOGON"
+author: Bryan Valenzuela
+date: 2026-11-28
+tags:
+    - attack.t1210
+logsource:
+    product: windows
+detection:
+    selection:
+        Channel: "System"
+        EventID: [5827, 5828, 5829, 5830, 5831]
+        Provider_Name: "NETLOGON"
+    condition: selection
+level: high
 # winlog-hunter: WLH-032
