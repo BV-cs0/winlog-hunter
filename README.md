@@ -1,8 +1,8 @@
 # winlog-hunter
 
-[![PyPI](https://img.shields.io/badge/PyPI-v0.8.0-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/badge/PyPI-v0.9.0-blue?logo=pypi&logoColor=white)](https://pypi.org/project/winlog-hunter/) [![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE) [![tests](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml/badge.svg)](https://github.com/BV-cs0/winlog-hunter/actions/workflows/tests.yml)
 
-Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Application**, **Sysmon**, **PowerShell**, **Defender**, **BITS**, **WinRM** **RDP**, **Application Experience** y **Winsock**, detecta actividad sospechosa con 46 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
+Analizador de logs de Windows para blue team. Lee eventos de **Security**, **System**, **Application**, **Sysmon**, **PowerShell**, **Defender**, **BITS**, **WinRM**, **RDP**, **Application Experience** y **Winsock**, detecta actividad sospechosa con 46 reglas y genera un informe con cada hallazgo mapeado a **MITRE ATT&CK**. Las reglas también están en formato **Sigma** para usarlas en cualquier SIEM.
 
 ![Informe de winlog-hunter con logs de ataques reales](docs/informe.png)
 
@@ -115,23 +115,23 @@ winlog-hunter se ha probado con [EVTX-ATTACK-SAMPLES](https://github.com/sbousse
 
 | Táctica | Ficheros | Detectados | Media o superior |
 |---|---:|---:|---:|
-| Credential Access | 39 | 25 | 25 |
-| Lateral Movement | 47 | 24 | 20 |
-| Persistence | 22 | 18 | 15 |
-| Execution | 34 | 25 | 23 |
-| Herramientas de pruebas automatizadas | 8 | 7 | 7 |
-| Privilege Escalation | 66 | 43 | 39 |
-| Defense Evasion | 36 | 22 | 17 |
-| Discovery | 11 | 6 | 3 |
-| Command and Control | 6 | 4 | 2 |
-| Otros | 9 | 6 | 5 |
-| **Total** | **278** | **180** | **156** |
+| Credential Access | 39 | 36 | 33 |
+| Lateral Movement | 47 | 44 | 38 |
+| Persistence | 22 | 22 | 20 |
+| Execution | 34 | 33 | 30 |
+| Herramientas de pruebas automatizadas | 8 | 8 | 8 |
+| Privilege Escalation | 66 | 64 | 60 |
+| Defense Evasion | 36 | 32 | 27 |
+| Discovery | 11 | 9 | 6 |
+| Command and Control | 6 | 6 | 5 |
+| Otros | 9 | 9 | 8 |
+| **Total** | **278** | **263** | **235** |
 
-Con severidad **media o superior**, se detectan **156/278** ficheros. Los **180/278** de la columna general incluyen indicios de severidad baja. La tabla procede de `tools/benchmark_evtx.py`, ejecutado también con `--min-severity medium`.
+Con severidad **media o superior**, se detectan **235/278** ficheros. Los **263/278** de la columna general incluyen indicios de severidad baja. La tabla procede de `tools/benchmark_evtx.py`, ejecutado también con `--min-severity medium`.
 
 No se cuentan los ficheros en los que solo salta *registro borrado*, porque el autor vació los logs antes de grabar cada ataque.
 
-Siguen sin cubrirse bien los ataques registrados solo mediante RPC/ETW, el acceso a credenciales de aplicaciones, algunos abusos de controladores y los binarios renombrados sin metadatos de identidad. Un logon RDP normal, una ventana Explorer `/factory`, una DLL portable aislada o un permiso de suspensión no bastan para atribuir un ataque. La cobertura mide presencia de indicios, incluidos los de severidad baja; no mide ataques confirmados ni la tasa de falsos positivos de un equipo de oficina.
+Siguen sin cubrirse los ataques registrados solo mediante RPC/ETW, que Windows no guarda en los logs habituales, y algunas técnicas que en el log no se distinguen de la actividad normal, como una única conexión a `srvsvc`, un fichero CPL o un proceso suspendido. Un logon RDP normal, una ventana Explorer `/factory`, una DLL portable aislada o un permiso de suspensión no bastan para atribuir un ataque. La cobertura mide presencia de indicios, incluidos los de severidad baja; no mide ataques confirmados ni la tasa de falsos positivos de un equipo de oficina.
 
 ## Preparar el equipo (recomendado)
 
